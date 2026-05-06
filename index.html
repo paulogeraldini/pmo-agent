@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Board — Azure DevOps</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f0f0f;color:#e8e6e0;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+  .app{max-width:1300px;width:100%;margin:0 auto;padding:16px 20px 0;flex:1;display:flex;flex-direction:column;min-height:0}
+
+  /* Setup */
+  .setup-card{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:28px;max-width:520px;margin:60px auto}
+  .setup-card h2{font-size:18px;font-weight:600;margin-bottom:6px;color:#f0ede8}
+  .setup-card p{font-size:13px;color:#888;margin-bottom:22px;line-height:1.6}
+  .logo{display:flex;align-items:center;gap:10px;margin-bottom:24px}
+  .logo-icon{width:36px;height:36px;background:linear-gradient(135deg,#0078d4,#004578);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+  .logo-text{font-size:16px;font-weight:600;color:#f0ede8}
+  .logo-sub{font-size:11px;color:#666;margin-top:1px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;color:#888;margin-bottom:5px;font-weight:500}
+  .field input{width:100%;font-size:13px;padding:9px 12px;border:1px solid #2a2a2a;border-radius:8px;background:#111;color:#e8e6e0;transition:border-color .15s}
+  .field input:focus{outline:none;border-color:#0078d4}
+  .hint{font-size:11px;color:#555;margin-top:4px}
+  .hint a{color:#0078d4;text-decoration:none}
+  .btn-connect{width:100%;padding:10px;font-size:14px;border:none;border-radius:8px;background:#0078d4;color:#fff;cursor:pointer;font-weight:500;margin-top:6px;transition:background .15s}
+  .btn-connect:hover{background:#006cbe}
+  .status-msg{font-size:12px;margin-top:10px;padding:8px 12px;border-radius:6px;display:none}
+  .status-err{background:#2a1010;color:#f87171;border:1px solid #3a1a1a;display:block}
+  .status-ok{background:#0a2a0a;color:#4ade80;border:1px solid #0a3a0a;display:block}
+  .status-loading{background:#1a1a2a;color:#93c5fd;border:1px solid #1a2a3a;display:block}
+
+  /* Board */
+  .board-wrap{display:none;flex:1;flex-direction:column;min-height:0;position:relative}
+.board-wrap.visible{display:flex}
+  .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+  .top-left{display:flex;align-items:center;gap:12px}
+  .project-info .org{font-size:12px;color:#666}
+  .project-info .proj{font-size:17px;font-weight:600;color:#f0ede8}
+  .top-actions{display:flex;gap:8px}
+  .btn-sm{padding:6px 14px;font-size:12px;border:1px solid #2a2a2a;border-radius:7px;background:#1a1a1a;color:#aaa;cursor:pointer;transition:all .15s}
+  .btn-sm:hover{background:#222;color:#e8e6e0;border-color:#444}
+
+  /* Tabs */
+  .tabs{display:flex;gap:6px;margin-bottom:20px;border-bottom:1px solid #2a2a2a;padding-bottom:0}
+  .tab{padding:8px 16px;font-size:13px;border:none;background:none;color:#666;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+  .tab.active{color:#0078d4;border-bottom-color:#0078d4;font-weight:500}
+  .tab:hover:not(.active){color:#aaa}
+
+  /* Filters */
+  .filter-bar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .filter-bar label{font-size:12px;color:#666;font-weight:500}
+  .filter-bar select{font-size:12px;padding:6px 10px;border:1px solid #2a2a2a;border-radius:7px;background:#1a1a1a;color:#e8e6e0;cursor:pointer}
+  .filter-bar select:focus{outline:none;border-color:#0078d4}
+  .filter-count{font-size:12px;color:#555;margin-left:auto}
+
+  /* Board columns */
+  .board{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:0}
+  .col{background:#141414;border:1px solid #222;border-radius:10px;padding:12px;min-height:300px}
+  .col-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .col-title{font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.8px}
+  .col-count{font-size:11px;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:999px;padding:2px 8px;color:#666}
+  .col-todo .col-title{color:#888}
+  .col-doing .col-title{color:#3b82f6}
+  .col-review .col-title{color:#f59e0b}
+  .col-done .col-title{color:#22c55e}
+.col-blocked .col-title{color:#ef4444}
+
+  /* Cards */
+  .card{background:#1a1a1a;border:1px solid #252525;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:all .15s}
+  .card:hover{border-color:#0078d4;background:#1e1e1e}
+  .card-id{font-size:10px;color:#555;margin-bottom:4px}
+  .card-title{font-size:12px;font-weight:500;color:#e8e6e0;margin-bottom:8px;line-height:1.45}
+  .card-meta{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+  .badge{font-size:10px;padding:2px 7px;border-radius:999px;font-weight:500;white-space:nowrap}
+  .b-red{background:#2a0a0a;color:#f87171;border:1px solid #3a1212}
+  .b-amber{background:#2a1a00;color:#fbbf24;border:1px solid #3a2500}
+  .b-green{background:#0a2a0a;color:#4ade80;border:1px solid #0a3a0a}
+  .b-blue{background:#0a1a2a;color:#60a5fa;border:1px solid #0a2a3a}
+  .b-gray{background:#1e1e1e;color:#888;border:1px solid #2a2a2a}
+  .b-purple{background:#1a0a2a;color:#c084fc;border:1px solid #2a0a3a}
+  .b-teal{background:#0a2a22;color:#2dd4bf;border:1px solid #0a3a2a}
+  .b-coral{background:#2a1008;color:#fb923c;border:1px solid #3a1a0a}
+  .empty-col{font-size:12px;color:#444;text-align:center;padding:30px 0;line-height:2}
+
+  /* AI Panel */
+.ai-panel{background:#141414;border:1px solid #2a2a2a;border-radius:10px 10px 0 0;padding:14px;border-bottom:none}
+.ai-panel-wrap{background:#0f0f0f;border-top:1px solid #1a1a1a;flex-shrink:0}
+  .ai-header{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+  .ai-icon{width:24px;height:24px;background:linear-gradient(135deg,#7c3aed,#4f46e5);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .ai-label{font-size:13px;font-weight:500;color:#e8e6e0}
+  .ai-hint{font-size:11px;color:#555;margin-left:auto}
+  .ai-row{display:flex;gap:8px;align-items:flex-start}
+  .ai-row textarea{flex:1;font-size:13px;font-family:inherit;border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px;resize:none;background:#111;color:#e8e6e0;min-height:58px;line-height:1.5;transition:border-color .15s}
+  .ai-row textarea:focus{outline:none;border-color:#7c3aed}
+  .ai-row textarea::placeholder{color:#444}
+  .btn-gen{padding:10px 16px;font-size:13px;border:1px solid #7c3aed;border-radius:8px;background:#1a0a2a;color:#c084fc;cursor:pointer;white-space:nowrap;transition:all .15s}
+  .btn-gen:hover{background:#2a1040;border-color:#9f67fa}
+  #voice-btn.recording{background:#2a0a0a;border-color:#f87171;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.4)}50%{box-shadow:0 0 0 8px rgba(248,113,113,0)}}
+  .btn-gen:hover{background:#2a1040;border-color:#9f67fa}
+
+  /* Preview */
+  .preview{margin-top:12px;background:#111;border:1px solid #252525;border-radius:8px;padding:14px}
+  .preview-title{font-size:14px;font-weight:600;color:#f0ede8;margin-bottom:4px}
+  .preview-desc{font-size:12px;color:#777;margin-bottom:12px;line-height:1.5}
+  .preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .pf-label{font-size:11px;color:#555;margin-bottom:4px;font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+  .pf-value{font-size:13px;color:#e8e6e0;font-weight:500}
+  .pf-input{font-size:13px;font-family:inherit;border:1px solid #2a2a2a;border-radius:6px;padding:6px 9px;background:#1a1a1a;color:#e8e6e0;width:100%;transition:border-color .15s}
+  .pf-input:focus{outline:none;border-color:#0078d4}
+  .tags-section{margin-bottom:12px}
+  .tags-list{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;min-height:26px}
+  .tag-chip{display:inline-flex;align-items:center;gap:5px;background:#1e1e1e;border:1px solid #2a2a2a;border-radius:999px;padding:3px 10px;font-size:11px;color:#aaa}
+  .tag-chip .tag-label{color:#ccc}
+  .tag-remove{cursor:pointer;color:#555;font-size:14px;line-height:1;transition:color .1s}
+  .tag-remove:hover{color:#f87171}
+  .tag-add-row{display:flex;gap:6px}
+  .tag-add-row input{flex:1;font-size:12px;font-family:inherit;padding:5px 9px;border:1px solid #2a2a2a;border-radius:6px;background:#1a1a1a;color:#e8e6e0}
+  .tag-add-row input:focus{outline:none;border-color:#0078d4}
+  .tag-add-row input::placeholder{color:#444}
+  .tag-add-btn{padding:5px 12px;font-size:12px;border:1px solid #2a2a2a;border-radius:6px;background:#1a1a1a;color:#888;cursor:pointer}
+  .tag-add-btn:hover{background:#222;color:#ccc}
+  .preview-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .btn-confirm{padding:7px 16px;font-size:13px;border:1px solid #0078d4;border-radius:7px;background:#0a1a2a;color:#60a5fa;cursor:pointer;font-weight:500;transition:all .15s}
+  .btn-confirm:hover{background:#0078d4;color:#fff}
+  .btn-cancel{padding:7px 14px;font-size:13px;border:1px solid #2a2a2a;border-radius:7px;background:#1a1a1a;color:#666;cursor:pointer;transition:all .15s}
+  .btn-cancel:hover{background:#222;color:#aaa}
+
+  /* Aliases panel */
+  .panel{background:#141414;border:1px solid #222;border-radius:10px;padding:20px}
+  .panel-title{font-size:15px;font-weight:600;color:#f0ede8;margin-bottom:4px}
+  .panel-desc{font-size:13px;color:#666;margin-bottom:18px;line-height:1.6}
+  .alias-add-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .alias-add-row input{font-size:13px;font-family:inherit;padding:8px 11px;border:1px solid #2a2a2a;border-radius:7px;background:#111;color:#e8e6e0}
+  .alias-add-row input:focus{outline:none;border-color:#0078d4}
+  #alias-name-in{width:160px}
+  #alias-email-in{flex:1;min-width:200px}
+  .btn-add{padding:8px 16px;font-size:13px;border:1px solid #0078d4;border-radius:7px;background:#0a1a2a;color:#60a5fa;cursor:pointer;white-space:nowrap}
+  .btn-add:hover{background:#0078d4;color:#fff}
+  .alias-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1a1a1a;border:1px solid #252525;border-radius:8px;margin-bottom:6px}
+  .alias-name{font-weight:600;color:#e8e6e0;min-width:120px;font-size:13px}
+  .alias-arrow{color:#444;font-size:12px}
+  .alias-email{color:#666;font-size:12px;flex:1}
+  .alias-del{font-size:11px;color:#f87171;cursor:pointer;padding:3px 8px;border:1px solid #3a1212;border-radius:5px;background:#1a0808;margin-left:auto}
+  .alias-del:hover{background:#2a1010}
+  .no-data{font-size:13px;color:#444;padding:16px 0;text-align:center}
+
+  /* Modal */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center}
+  .modal-overlay.open{display:flex}
+  .modal{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:24px;width:400px;max-width:92vw;max-height:90vh;overflow-y:auto}
+  .modal-title{font-size:15px;font-weight:600;color:#f0ede8;margin-bottom:16px;line-height:1.4}
+  .modal-field{font-size:13px;color:#666;margin-bottom:8px;display:flex;gap:8px}
+  .modal-field strong{color:#ccc;min-width:90px}
+  .modal-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .modal-link{display:inline-block;margin-top:12px;font-size:12px;color:#0078d4;text-decoration:none}
+  .modal-link:hover{text-decoration:underline}
+  .modal-section{margin-top:14px;padding-top:14px;border-top:1px solid #252525}
+  .modal-section-title{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;font-weight:600}
+  .modal-moves{display:flex;gap:6px;flex-wrap:wrap}
+  .btn-move{font-size:12px;padding:5px 12px;border:1px solid #2a2a2a;border-radius:6px;background:#111;color:#888;cursor:pointer;transition:all .15s}
+  .btn-move:hover{border-color:#0078d4;color:#60a5fa;background:#0a1a2a}
+  .modal-close{margin-top:16px;width:100%;padding:8px;font-size:13px;border:1px solid #2a2a2a;border-radius:7px;background:#111;cursor:pointer;color:#666;transition:all .15s}
+  .modal-close:hover{background:#1a1a1a;color:#aaa}
+
+  /* Misc */
+  .dot{display:inline-block;animation:blink 1s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  .divider{height:1px;background:#1e1e1e;margin:6px 0}
+  .kbd{font-size:10px;background:#1e1e1e;border:1px solid #333;border-radius:4px;padding:1px 5px;color:#666}
+  #tab-board{display:flex;flex-direction:column;flex:1;min-height:0}
+  .board-scroll{flex:1;overflow-y:auto;padding-bottom:8px;min-height:0}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SETUP -->
+  <div id="setup-view">
+    <div class="setup-card">
+      <div class="logo">
+        <div class="logo-icon">📋</div>
+        <div>
+          <div class="logo-text">DevOps Board</div>
+          <div class="logo-sub">Integrado com Azure DevOps · Criação via IA</div>
+        </div>
+      </div>
+      <h2>Conectar ao Azure DevOps</h2>
+      <p>Preencha os dados abaixo para sincronizar com seu projeto. O PAT fica apenas na memória do navegador e nunca é enviado a terceiros.</p>
+      <div class="field">
+        <label>Organization</label>
+        <input id="org" placeholder="ex: cooperpix" value="cooperpix"/>
+        <div class="hint">Aparece na URL: <strong>dev.azure.com/cooperpix</strong></div>
+      </div>
+      <div class="field">
+        <label>Project</label>
+        <input id="proj" placeholder="ex: Dados e Business Intelligence" value="Dados e Business Intelligence"/>
+      </div>
+      <div class="field">
+        <label>Personal Access Token (PAT)</label>
+        <input id="pat" type="password" placeholder="Cole seu PAT aqui" value=""/>
+        <div class="hint">Gere em: User Settings → Personal Access Tokens → <strong>Work Items: Read & Write</strong></div>
+      </div>
+      <button class="btn-connect" onclick="connect()">Conectar</button>
+      <div id="conn-status" class="status-msg"></div>
+    </div>
+  </div>
+
+  <!-- BOARD -->
+  <div class="board-wrap" id="board-view">
+    <div class="top-bar">
+      <div class="top-left">
+        <div class="project-info">
+          <div class="org" id="proj-org"></div>
+          <div class="proj" id="proj-name"></div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="btn-sm" onclick="openAliasesModal()">👤 Responsáveis</button>
+      <button class="btn-sm" onclick="loadBoard()">⟳ Atualizar</button>
+        <button class="btn-sm" onclick="disconnect()">Desconectar</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('board')">Board</button>
+      
+    </div>
+
+    <!-- BOARD TAB -->
+    <div id="tab-board">
+      <div class="board-scroll">
+      <div class="filter-bar">
+        <label>Área:</label>
+        <select id="filter-area" onchange="renderBoard()"><option value="">Todas</option></select>
+        <label>Tipo:</label>
+        <select id="filter-type" onchange="renderBoard()">
+          <option value="">Todos</option>
+          <option value="bug">bug</option>
+          <option value="melhoria">melhoria</option>
+          <option value="novo-recurso">novo-recurso</option>
+          <option value="análise">análise</option>
+          <option value="suporte">suporte</option>
+        </select>
+        <span class="filter-count" id="filter-count"></span>
+      </div>
+      <div class="board" id="board"></div>
+
+      </div><!-- /board-scroll -->
+      <div class="ai-panel-wrap">
+      <div id="pbi-panel" style="background:#141414;border:1px solid #2a2a2a;border-radius:10px 10px 0 0;padding:10px 16px;border-bottom:1px solid #1a1a1a;display:none">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:500;color:#888">PBIs recentes</span>
+          <input id="pbi-quick-search" placeholder="Buscar..." style="font-size:12px;font-family:inherit;padding:3px 8px;border:1px solid #2a2a2a;border-radius:5px;background:#111;color:#e8e6e0;width:200px" oninput="quickSearchPBIs(this.value)"/>
+          <button onclick="document.getElementById('pbi-panel').style.display='none'" style="margin-left:auto;font-size:11px;padding:2px 8px;border:1px solid #2a2a2a;border-radius:5px;background:#1a1a1a;color:#666;cursor:pointer">✕</button>
+        </div>
+        <div id="pbi-quick-list" style="display:flex;gap:6px;flex-wrap:wrap;max-height:80px;overflow-y:auto"></div>
+      </div>
+      <div class="ai-panel">
+        <div class="ai-header">
+          <div class="ai-icon">✦</div>
+          <div class="ai-label">Criar task com linguagem natural</div>
+          <div class="ai-hint">A IA interpreta área, prioridade, responsável, sprint e tipo automaticamente</div>
+          <button onclick="togglePBIPanel()" style="font-size:11px;padding:3px 10px;border:1px solid #2a2a2a;border-radius:5px;background:#1a1a2a;color:#60a5fa;cursor:pointer;white-space:nowrap">PBIs recentes</button>
+        </div>
+        <div class="ai-row">
+          <textarea id="ai-input" placeholder="Ex: Bug no relatório de inadimplência do Financeiro para o Gabriel, sprint 4 — está quebrando no cálculo de juros compostos, é urgente pois impacta o fechamento do mês..."></textarea>
+          <button id="voice-btn" class="btn-gen" onclick="toggleVoice()" title="Clique e fale a demanda" style="padding:10px 14px;font-size:16px;background:#1a0a2a;border-color:#7c3aed">🎙️</button>
+          <button class="btn-gen" onclick="generateCard()">Gerar task ↗</button>
+        </div>
+        <div id="ai-preview"></div>
+      </div>
+    </div>
+
+    <!-- ALIASES TAB -->
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-title" id="m-title"></div>
+    <div id="m-body"></div>
+    <button class="modal-close" onclick="closeModal()">Fechar</button>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────
+const ANTHROPIC_API_KEY = localStorage.getItem('anthropic_key') || ''; // deixe vazio — a chave é injetada pelo Claude.ai quando rodando lá
+// Para uso local, insira sua chave aqui: 'sk-ant-...'
+
+const COLS = ['Backlog','Em Andamento','Impedido','Impedido QA','Concluído'];
+const COL_CLASSES = ['col-todo','col-doing','col-blocked','col-blocked','col-done'];
+const COL_MAP = {
+  // Proposed/Backlog
+  'to do':0,'backlog':0,'new':0,'open':0,'approved':0,'planejado':0,'prioridades':0,'apontar horas':0,
+  // In Progress
+  'in progress':1,'em desenvolvimento':1,'active':1,'committed':1,'em teste qa':1,
+  'subir para produção':1,'reanalise':1,'em validação produção':1,'subir qa':1,
+  'validação área de negócios':1,'pronto para teste qa':1,'pronto para produção':1,
+  'validação pré-prod':1,'cross-sprint':1,'reanalise qa':1,
+  // Blocked
+  'impedido':2,'blocked':2,'bloqueado':2,
+  // Blocked QA
+  'impedido qa':3,
+  // Done
+  'done':4,'concluído':4,'closed':4,'resolved':4,'completed':4,'removed':4
+};
+// Map col index to state per work item type
+function colToState(colIdx, type) {
+  const isTask = (type||'Task').toLowerCase().includes('task');
+  const map = isTask
+    ? ['To Do','In Progress','Impedido','Impedido QA','Done']
+    : ['Backlog','Em Desenvolvimento','Impedido','Impedido QA','Concluído'];
+  return map[colIdx] || map[0];
+}
+
+let cfg = {};
+let items = [];
+let areaPaths = [];
+let iterations = [];
+let pbis = [];
+let aliases = {};
+let pending = null;
+let pendingTags = [];
+
+// ── UTILS ────────────────────────────────────────────────
+function colIndex(s) {
+  if (!s) return 0;
+  const sl = s.toLowerCase();
+  for (const k of Object.keys(COL_MAP)) { if (sl.includes(k)) return COL_MAP[k]; }
+  return 0;
+}
+function priorityBadge(p) { return {'1':'b-purple','2':'b-red','3':'b-amber','4':'b-green'}[String(p||'')] || 'b-gray'; }
+function priorityLabel(p) { return {'1':'crítica','2':'alta','3':'média','4':'baixa'}[String(p||'')] || String(p||''); }
+function hdrs() { return { 'Content-Type':'application/json', 'Authorization':'Basic '+btoa(':'+cfg.pat) }; }
+function phdrs() { return { 'Content-Type':'application/json-patch+json', 'Authorization':'Basic '+btoa(':'+cfg.pat) }; }
+
+function tagBadgeClass(tag) {
+  const t = tag.toLowerCase();
+  if (t.startsWith('sprint')) return 'b-purple';
+  if (t === 'bug') return 'b-red';
+  if (t === 'melhoria') return 'b-teal';
+  if (t === 'novo-recurso') return 'b-blue';
+  if (t === 'análise' || t === 'dados') return 'b-amber';
+  if (t === 'suporte') return 'b-coral';
+  return 'b-gray';
+}
+
+function resolveAlias(name) {
+  if (!name) return null;
+  const n = name.toLowerCase().trim();
+  for (const [a, e] of Object.entries(aliases)) {
+    if (a.toLowerCase() === n || n.includes(a.toLowerCase())) return e;
+  }
+  return name.includes('@') ? name : null;
+}
+
+function setConnStatus(msg, type) {
+  const el = document.getElementById('conn-status');
+  el.innerHTML = msg;
+  el.className = 'status-msg status-' + type;
+}
+
+// ── CONNECT ──────────────────────────────────────────────
+async function connect() {
+  const org = document.getElementById('org').value.trim();
+  const proj = document.getElementById('proj').value.trim();
+  const pat = document.getElementById('pat').value.trim();
+  if (!org || !proj || !pat) { setConnStatus('Preencha todos os campos.', 'err'); return; }
+  cfg = { org, proj, pat };
+  setConnStatus('Conectando<span class="dot">...</span>', 'loading');
+  try {
+    const r = await fetch(
+      `https://dev.azure.com/${org}/${encodeURIComponent(proj)}/_apis/wit/wiql?api-version=7.0`,
+      { method:'POST', headers:hdrs(), body:JSON.stringify({ query:"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.ChangedDate] DESC" }) }
+    );
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error('HTTP ' + r.status + ' — ' + errText.substring(0, 200));
+    }
+    setConnStatus('Conectado com sucesso!', 'ok');
+    savePAT(org, proj, pat);
+    await loadAreaPaths();
+    await loadIterations();
+    await loadPBIs();
+    document.getElementById('setup-view').style.display = 'none';
+    const bv = document.getElementById('board-view');
+    bv.classList.add('visible');
+    document.getElementById('proj-org').textContent = org;
+    document.getElementById('proj-name').textContent = proj;
+    renderAliases();
+    await loadBoard();
+  } catch(e) {
+    setConnStatus('Falha na conexão. Verifique org, projeto e PAT. Erro: ' + e.message, 'err');
+  }
+}
+
+function disconnect() {
+  cfg = {}; items = []; areaPaths = [];
+  document.getElementById('setup-view').style.display = 'block';
+  document.getElementById('board-view').classList.remove('visible');
+  document.getElementById('conn-status').className = 'status-msg';
+}
+
+// ── AREA PATHS ───────────────────────────────────────────
+async function loadAreaPaths() {
+  try {
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/classificationnodes/areas?$depth=5&api-version=7.0`,
+      { headers: hdrs() }
+    );
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    areaPaths = [];
+    function walk(node, parent) {
+      const path = parent ? `${parent}\\${node.name}` : node.name;
+      areaPaths.push(path);
+      if (node.children) node.children.forEach(c => walk(c, path));
+    }
+    walk(d, '');
+    areaPaths = areaPaths.filter(p => p);
+    try { localStorage.setItem('devops_area_paths', JSON.stringify(areaPaths)); } catch(e2) {}
+    populateAreaFilter();
+  } catch(e) {
+    console.warn('area paths API failed:', e);
+    try {
+      const saved = localStorage.getItem('devops_area_paths');
+      if (saved) { areaPaths = JSON.parse(saved); populateAreaFilter(); }
+    } catch(e2) {}
+  }
+}
+
+function populateAreaFilter() {
+  const sel = document.getElementById('filter-area');
+  sel.innerHTML = '<option value="">Todas</option>';
+  areaPaths.forEach(p => {
+    const short = p.split('\\').pop();
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = short;
+    sel.appendChild(opt);
+  });
+}
+
+// ── LOAD ITERATIONS ─────────────────────────────────────
+async function loadIterations() {
+  try {
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/classificationnodes/iterations?$depth=5&api-version=7.0`,
+      { headers: hdrs() }
+    );
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    iterations = [];
+    function walk(node, parent) {
+      const path = parent ? `${parent}\\${node.name}` : node.name;
+      iterations.push({ path, name: node.name, id: node.id });
+      if (node.children) node.children.forEach(c => walk(c, path));
+    }
+    walk(d, '');
+    iterations = iterations.filter(i => i.path);
+    try { localStorage.setItem('devops_iterations', JSON.stringify(iterations)); } catch(e) {}
+  } catch(e) {
+    try {
+      const saved = localStorage.getItem('devops_iterations');
+      if (saved) iterations = JSON.parse(saved);
+    } catch(e2) {}
+  }
+}
+
+// ── LOAD PBIs ────────────────────────────────────────────
+async function loadPBIs(search = '') {
+  try {
+    const searchClause = search
+      ? `AND [System.Title] CONTAINS '${search}'`
+      : '';
+    const query = `SELECT [System.Id],[System.Title] FROM WorkItems WHERE [System.WorkItemType]='Product Backlog Item' ${searchClause} ORDER BY [System.ChangedDate] DESC`;
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
+      { method:'POST', headers:hdrs(), body:JSON.stringify({ query }) }
+    );
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    const ids = (data.workItems || []).slice(0, 20).map(w => w.id);
+    if (!ids.length) { pbis = []; return; }
+    const r2 = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems?ids=${ids.join(',')}&fields=System.Id,System.Title,System.State&api-version=7.0`,
+      { headers: hdrs() }
+    );
+    const d2 = await r2.json();
+    pbis = (d2.value || []).map(w => ({
+      id: w.id,
+      title: w.fields['System.Title'],
+      state: w.fields['System.State']
+    }));
+  } catch(e) { console.warn('pbis error:', e.message); pbis = []; }
+}
+
+// ── LOAD BOARD ───────────────────────────────────────────
+async function loadBoard() {
+  document.getElementById('board').innerHTML =
+    '<div style="grid-column:1/-1;padding:20px;color:#555;font-size:13px">Carregando<span class="dot">...</span></div>';
+  try {
+    // Use search endpoint instead of WIQL
+    const fields = 'System.Id,System.Title,System.State,Microsoft.VSTS.Common.Priority,System.AreaPath,System.AssignedTo,Custom.HorasOriginais,System.Tags,System.WorkItemType';
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
+      { method:'POST', headers:hdrs(), body:JSON.stringify({
+        query:`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@project AND [System.WorkItemType] IN ('Task','Product Backlog Item') AND [System.AreaPath] UNDER '${cfg.proj}' ORDER BY [System.ChangedDate] DESC`
+      })}
+    );
+    if (!r.ok) {
+      const t = await r.text();
+      // Try fallback: load by area path
+      throw new Error('HTTP ' + r.status + ': ' + t.substring(0,300));
+    }
+    const data = await r.json();
+    const ids = (data.workItems || []).slice(0, 80).map(w => w.id);
+    if (!ids.length) { items = []; renderBoard(); return; }
+    const r2 = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems?ids=${ids.join(',')}&fields=${fields}&api-version=7.0`,
+      { headers: hdrs() }
+    );
+    if (!r2.ok) throw new Error('HTTP ' + r2.status);
+    const d2 = await r2.json();
+    items = (d2.value || []).map(w => ({
+      id: w.id,
+      title: w.fields['System.Title'],
+      state: w.fields['System.State'] || 'Backlog',
+      type: w.fields['System.WorkItemType'] || 'Task',
+      priority: w.fields['Microsoft.VSTS.Common.Priority'],
+      areaPath: w.fields['System.AreaPath'] || '',
+      areaShort: (w.fields['System.AreaPath'] || '').split('\\').pop(),
+      assignedTo: w.fields['System.AssignedTo']?.displayName || w.fields['System.AssignedTo'] || null,
+      hours: w.fields['Custom.HorasOriginais'] || null,
+      tags: (w.fields['System.Tags'] || '').split(';').map(t => t.trim()).filter(Boolean),
+      col: colIndex(w.fields['System.State'] || 'Backlog')
+    }));
+    renderBoard();
+  } catch(e) {
+    document.getElementById('board').innerHTML =
+      `<div style="grid-column:1/-1;padding:20px;color:#f87171;font-size:13px">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+// ── DRAG AND DROP ────────────────────────────────────────
+let draggedId = null;
+
+function dragStart(e, id) {
+  draggedId = id;
+  setTimeout(() => e.target.classList.add('dragging'), 0);
+}
+
+function dragEnd(e) {
+  e.target.classList.remove('dragging');
+  draggedId = null;
+}
+
+async function dropCard(colIdx) {
+  if (draggedId === null) return;
+  const item = items.find(i => i.id === draggedId);
+  if (!item || item.col === colIdx) return;
+  const newState = colToState(colIdx, item.type);
+  const prevCol = item.col;
+  // Optimistic update
+  item.col = colIdx;
+  item.state = newState;
+  renderBoard();
+  try {
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${draggedId}?api-version=7.0`,
+      { method:'PATCH', headers:phdrs(), body:JSON.stringify([{op:'add',path:'/fields/System.State',value:newState}]) }
+    );
+    if (!r.ok) { const err = await r.json(); throw new Error(err.message||r.status); }
+  } catch(e) {
+    // Rollback on error
+    item.col = prevCol;
+    item.state = colToState(prevCol, item.type);
+    renderBoard();
+    alert('Erro ao mover: ' + e.message);
+  }
+}
+
+// ── RENDER BOARD ─────────────────────────────────────────
+function renderBoard() {
+  const fa = document.getElementById('filter-area')?.value || '';
+  const ft = document.getElementById('filter-type')?.value || '';
+  const filtered = items.filter(i => {
+    if (fa && !i.areaPath.includes(fa)) return false;
+    if (ft && !i.tags.some(t => t.toLowerCase() === ft)) return false;
+    return true;
+  });
+  const countEl = document.getElementById('filter-count');
+  if (countEl) countEl.textContent = `${filtered.length} task${filtered.length !== 1 ? 's' : ''}`;
+
+  const b = document.getElementById('board');
+  b.innerHTML = '';
+  COLS.forEach((col, ci) => {
+    const cards = filtered.filter(c => c.col === ci);
+    const div = document.createElement('div');
+    div.className = 'col ' + COL_CLASSES[ci];
+    div.dataset.col = ci;
+    div.ondragover = e => { e.preventDefault(); div.classList.add('drag-over'); };
+    div.ondragleave = () => div.classList.remove('drag-over');
+    div.ondrop = e => { e.preventDefault(); div.classList.remove('drag-over'); dropCard(ci); };
+    div.innerHTML = `
+      <div class="col-header">
+        <span class="col-title">${col}</span>
+        <span class="col-count">${cards.length}</span>
+      </div>
+      ${cards.length === 0 ? '<div class="empty-col">Nenhuma task</div>' : ''}
+      ${cards.map(c => `
+        <div class="card" draggable="true"
+          ondragstart="dragStart(event,${c.id})"
+          ondragend="dragEnd(event)"
+          onclick="openItem(${c.id})">
+          <div class="card-id">#${c.id} · ${c.areaShort}</div>
+          <div class="card-title">${c.title}</div>
+          <div class="card-meta">
+            ${c.priority ? `<span class="badge ${priorityBadge(c.priority)}">${priorityLabel(c.priority)}</span>` : ''}
+            ${c.assignedTo ? `<span class="badge b-teal">${c.assignedTo.split(' ')[0]}</span>` : ''}
+            ${c.hours ? `<span class="badge b-gray">${c.hours}h</span>` : ''}
+            ${c.tags.slice(0, 2).map(t => `<span class="badge ${tagBadgeClass(t)}">${t}</span>`).join('')}
+          </div>
+        </div>`).join('')}`;
+    b.appendChild(div);
+  });
+}
+
+// ── OPEN ITEM MODAL ──────────────────────────────────────
+function openItem(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const url = `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_workitems/edit/${id}`;
+  document.getElementById('m-title').textContent = item.title;
+  document.getElementById('m-body').innerHTML = `
+    <div class="modal-field"><strong>ID</strong> #${item.id}</div>
+    <div class="modal-field"><strong>Estado</strong> ${item.state}</div>
+    <div class="modal-field"><strong>Área</strong> ${item.areaShort || '—'}</div>
+    ${item.assignedTo ? `<div class="modal-field"><strong>Responsável</strong> ${item.assignedTo}</div>` : ''}
+    ${item.hours ? `<div class="modal-field"><strong>Estimativa</strong> ${item.hours}h</div>` : ''}
+    ${item.priority ? `<div class="modal-field"><strong>Prioridade</strong> ${priorityLabel(item.priority)}</div>` : ''}
+    ${item.tags.length ? `<div class="modal-field"><strong>Tags</strong><div class="modal-tags">${item.tags.map(t => `<span class="badge ${tagBadgeClass(t)}">${t}</span>`).join('')}</div></div>` : ''}
+    <a class="modal-link" href="${url}" target="_blank">↗ Abrir no Azure DevOps</a>
+    <div class="modal-section">
+      <div class="modal-section-title">Mover para</div>
+      <div class="modal-moves">
+        ${COLS.filter((_, i) => i !== item.col).map((col, _, arr) => {
+          const idx = COLS.indexOf(col);
+          return `<button class="btn-move" onclick="moveItem(${id},${idx})">${col}</button>`;
+        }).join('')}
+      </div>
+    </div>`;
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+function closeModalOutside(e) { if (e.target.id === 'modal') closeModal(); }
+
+// ── MOVE ITEM ────────────────────────────────────────────
+async function moveItem(id, colIdx) {
+  closeModal();
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const newState = colToState(colIdx, item.type);
+  try {
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${id}?api-version=7.0`,
+      { method:'PATCH', headers:phdrs(), body:JSON.stringify([{op:'add',path:'/fields/System.State',value:newState}]) }
+    );
+    if (!r.ok) { const e = await r.json(); throw new Error(e.message||r.status); }
+    item.state = newState;
+    item.col = colIdx;
+    renderBoard();
+  } catch(e) { alert('Erro ao mover item: ' + e.message); }
+}
+
+// ── GENERATE CARD ────────────────────────────────────────
+async function generateCard() {
+  const input = document.getElementById('ai-input').value.trim();
+  if (!input) return;
+  const preview = document.getElementById('ai-preview');
+  preview.innerHTML = `<div class="preview"><span style="font-size:13px;color:#666">Analisando<span class="dot">...</span></span></div>`;
+
+  const aliasHint = Object.keys(aliases).length
+    ? `\nAliases cadastrados: ${Object.keys(aliases).map(a => `"${a}"`).join(', ')}. Se o texto mencionar algum, use em assignedToAlias.`
+    : '';
+  const areaHint = areaPaths.length
+    ? `\nArea paths disponíveis (use valor exato): ${areaPaths.map(p => `"${p}"`).join(', ')}.`
+    : '';
+
+  try {
+    const sys = `Você converte descrições em linguagem natural em work items do Azure DevOps.
+Retorne APENAS JSON válido sem markdown com os campos:
+- title: string (título conciso, máx 80 chars)
+- description: string (2-3 frases explicando o que precisa ser feito)
+- priority: string ("1"=crítica,"2"=alta,"3"=média,"4"=baixa)
+- areaPath: string ou null (escolha da lista disponível, ou null se não identificado)
+- assignedToAlias: string ou null (alias/nome do responsável mencionado, ou null)
+- workItemType: string ("Task" para tarefas técnicas/operacionais, "Product Backlog Item" para funcionalidades, melhorias de produto ou requisitos de negócio)
+- iteration: string ou null (nome ou parte do nome da iteração mencionada no texto, ou null)
+- pbiId: number ou null (ID do PBI mencionado no texto ex: "PBI 42" ou "vincular ao 42", ou null)
+- tags: array de strings (tipo de demanda: bug/melhoria/novo-recurso/análise/suporte se identificado, e outras tags relevantes; pode ser array vazio)${aliasHint}${areaHint}`;
+
+    const apiKey = ANTHROPIC_API_KEY;
+    const body = {
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 600,
+      system: sys,
+      messages: [{ role:'user', content: input }]
+    };
+    const headers = { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers, body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error.message);
+    const text = d.content.map(i => i.text || '').join('');
+    pending = JSON.parse(text.replace(/```json|```/g, '').trim());
+    pending._resolvedEmail = pending.assignedToAlias ? resolveAlias(pending.assignedToAlias) : null;
+    pendingTags = [...(pending.tags || [])];
+
+    const areaShort = pending.areaPath ? pending.areaPath.split('\\').pop() : '';
+    preview.innerHTML = `
+      <div class="preview">
+        <div class="preview-title">${pending.title}</div>
+        <div class="preview-desc">${pending.description}</div>
+        <div class="preview-grid">
+          <div>
+            <div class="pf-label">Tipo</div>
+            <select class="pf-input" id="pf-type">
+              <option value="Task" ${pending.workItemType === 'Task' ? 'selected' : ''}>Task</option>
+              <option value="Product Backlog Item" ${pending.workItemType === 'Product Backlog Item' ? 'selected' : ''}>Product Backlog Item</option>
+            </select>
+          </div>
+          <div>
+            <div class="pf-label">Prioridade</div>
+            <div class="pf-value">${priorityLabel(pending.priority)}</div>
+          </div>
+          <div>
+            <div class="pf-label">Área</div>
+            <select class="pf-input" id="pf-area">
+              <option value="">— Selecione —</option>
+              ${areaPaths.map(p => {
+                const short = p.split('\\').pop();
+                const selected = pending.areaPath === p ? 'selected' : '';
+                return `<option value="${p}" ${selected}>${short}</option>`;
+              }).join('')}
+            </select>
+          </div>
+          <div>
+            <div class="pf-label">Responsável</div>
+            ${pending._resolvedEmail
+              ? `<div class="pf-value" style="font-size:11px">${pending._resolvedEmail}</div>`
+              : `<input class="pf-input" id="pf-assignee" placeholder="e-mail do responsável" value="${pending.assignedToAlias || ''}"/>`
+            }
+          </div>
+          <div>
+            <div class="pf-label">Horas Originais <span style="color:#f87171">*</span></div>
+            <input class="pf-input" id="pf-hours" type="number" min="0.5" step="0.5" placeholder="ex: 4" required/>
+          </div>
+          <div style="grid-column:1/-1">
+            <div class="pf-label">Iteração</div>
+            <select class="pf-input" id="pf-iteration">
+              <option value="">— Sem iteração —</option>
+              ${iterations.map(i => `<option value="${i.path}" ${pending.iteration && i.name.toLowerCase().includes((pending.iteration||'').toLowerCase()) ? 'selected' : ''}>${i.name}</option>`).join('')}
+            </select>
+          </div>
+          <div style="grid-column:1/-1">
+            <div class="pf-label">Vincular a PBI</div>
+            <div style="display:flex;gap:6px;margin-bottom:6px">
+              <input class="pf-input" id="pbi-search" placeholder="Buscar PBI por título..." style="flex:1" oninput="searchPBIs(this.value)"/>
+            </div>
+            <select class="pf-input" id="pf-pbi" size="4" style="height:auto">
+              <option value="">— Nenhum —</option>
+              ${pbis.map(p => `<option value="${p.id}" ${pending.pbiId == p.id ? 'selected' : ''}>#${p.id} · ${p.title}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="tags-section">
+          <div class="pf-label">Tags <span style="font-weight:400;color:#444;text-transform:none;letter-spacing:0">(opcional — edite antes de criar)</span></div>
+          <div class="tags-list" id="tags-list"></div>
+          <div class="tag-add-row">
+            <input id="tag-new-input" placeholder="Adicionar tag..." onkeydown="if(event.key==='Enter'){addTag();event.preventDefault()}"/>
+            <button class="tag-add-btn" onclick="addTag()">+ Adicionar</button>
+          </div>
+        </div>
+        <div class="preview-actions">
+          <button class="btn-confirm" onclick="createItem()">Criar no Azure DevOps</button>
+          <button class="btn-cancel" onclick="cancelPreview()">Cancelar</button>
+        </div>
+      </div>`;
+    renderTagsEditor();
+  } catch(e) {
+    preview.innerHTML = `<div class="preview"><span style="font-size:13px;color:#f87171">Erro ao gerar: ${e.message}.<br>Para uso local, insira sua chave Anthropic no topo do arquivo HTML.</span></div>`;
+  }
+}
+
+async function togglePBIPanel() {
+  const panel = document.getElementById('pbi-panel');
+  if (panel.style.display === 'none') {
+    await loadPBIs();
+    renderPBIPanel();
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function renderPBIPanel() {
+  const list = document.getElementById('pbi-quick-list');
+  if (!list) return;
+  if (!pbis.length) { list.innerHTML = '<span style="font-size:12px;color:#555">Nenhum PBI encontrado</span>'; return; }
+  list.innerHTML = pbis.map(p => `
+    <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis"
+      onclick="selectPBI(${p.id})" title="#${p.id} · ${p.title}">
+      <span style="color:#555">#${p.id}</span> <span style="color:#ccc">${p.title.substring(0,40)}${p.title.length>40?'...':''}</span>
+    </div>`).join('');
+}
+
+function selectPBI(id) {
+  const sel = document.getElementById('pf-pbi');
+  if (sel) { sel.value = id; }
+  document.getElementById('pbi-panel').style.display = 'none';
+}
+
+async function quickSearchPBIs(term) {
+  await loadPBIs(term);
+  renderPBIPanel();
+}
+
+async function searchPBIs(term) {
+  await loadPBIs(term);
+  const sel = document.getElementById('pf-pbi');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Nenhum —</option>' +
+    pbis.map(p => `<option value="${p.id}">#${p.id} · ${p.title}</option>`).join('');
+}
+
+function cancelPreview() {
+  document.getElementById('ai-preview').innerHTML = '';
+  document.getElementById('ai-input').value = '';
+  pending = null; pendingTags = [];
+}
+
+// ── TAGS EDITOR ──────────────────────────────────────────
+function renderTagsEditor() {
+  const list = document.getElementById('tags-list');
+  if (!list) return;
+  list.innerHTML = pendingTags.map((t, i) => `
+    <div class="tag-chip">
+      <span class="tag-label badge ${tagBadgeClass(t)}" style="border-radius:999px">${t}</span>
+      <span class="tag-remove" onclick="removeTag(${i})">×</span>
+    </div>`).join('');
+}
+function removeTag(i) { pendingTags.splice(i, 1); renderTagsEditor(); }
+function addTag() {
+  const inp = document.getElementById('tag-new-input');
+  const val = inp.value.trim().toLowerCase().replace(/\s+/g, '-');
+  if (val && !pendingTags.includes(val)) pendingTags.push(val);
+  inp.value = '';
+  renderTagsEditor();
+}
+
+// ── CREATE ITEM ──────────────────────────────────────────
+async function createItem() {
+  if (!pending) return;
+  const preview = document.getElementById('ai-preview');
+  const hoursEl = document.getElementById('pf-hours');
+  const assigneeEl = document.getElementById('pf-assignee');
+  // hours parsed below after validation
+  const assignee = pending._resolvedEmail || (assigneeEl ? assigneeEl.value.trim() : null) || null;
+  const tagsStr = pendingTags.join('; ');
+  const areaEl = document.getElementById('pf-area');
+  const selectedArea = areaEl ? areaEl.value : pending.areaPath;
+
+  const hoursVal = hoursEl ? parseFloat(hoursEl.value) || null : null;
+  if (!hoursVal) {
+    preview.innerHTML = `<div class="preview"><span style="color:#f87171;font-size:13px">Preencha o campo "Horas Originais" — é obrigatório neste projeto.</span></div>`;
+    return;
+  }
+  preview.innerHTML = `<div class="preview"><span style="font-size:13px;color:#666">Criando no Azure DevOps<span class="dot">...</span></span></div>`;
+  try {
+    const body = [
+      { op:'add', path:'/fields/System.Title', value: pending.title },
+      { op:'add', path:'/fields/System.Description', value: pending.description },
+      { op:'add', path:'/fields/Microsoft.VSTS.Common.Priority', value: parseInt(pending.priority) || 3 },
+    ];
+    if (selectedArea) body.push({ op:'add', path:'/fields/System.AreaPath', value: selectedArea });
+    if (assignee) body.push({ op:'add', path:'/fields/System.AssignedTo', value: assignee });
+    body.push({ op:'add', path:'/fields/Custom.HorasOriginais', value: hoursVal });
+    if (tagsStr) body.push({ op:'add', path:'/fields/System.Tags', value: tagsStr });
+
+    // Iteration
+    const iterEl = document.getElementById('pf-iteration');
+    const iterVal = iterEl ? iterEl.value : '';
+    if (iterVal) body.push({ op:'add', path:'/fields/System.IterationPath', value: iterVal });
+
+    const typeEl = document.getElementById('pf-type');
+    const workItemType = typeEl ? typeEl.value : (pending.workItemType || 'Task');
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${encodeURIComponent('$' + workItemType)}?api-version=7.0`,
+      { method:'POST', headers: phdrs(), body: JSON.stringify(body) }
+    );
+    if (!r.ok) { const err = await r.json(); throw new Error(err.message || r.status); }
+    const created = await r.json();
+
+    // Link to parent PBI if selected
+    const pbiEl = document.getElementById('pf-pbi');
+    const pbiId = pbiEl ? pbiEl.value : '';
+    if (pbiId) {
+      try {
+        await fetch(
+          `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${created.id}?api-version=7.0`,
+          { method:'PATCH', headers:phdrs(), body:JSON.stringify([{
+            op:'add', path:'/relations/-',
+            value:{ rel:'System.LinkTypes.Hierarchy-Reverse',
+              url:`https://dev.azure.com/${cfg.org}/_apis/wit/workitems/${pbiId}`,
+              attributes:{ comment:'' }
+            }
+          }])}
+        );
+      } catch(e) { console.warn('link PBI failed:', e); }
+    }
+
+    preview.innerHTML = `<div class="preview"><span style="color:#4ade80;font-size:13px;font-weight:500">✓ ${workItemType} #${created.id} criado com sucesso no Azure DevOps!${pbiId ? ' Vinculado ao PBI #'+pbiId : ''}</span></div>`;
+    document.getElementById('ai-input').value = '';
+    pending = null; pendingTags = [];
+    setTimeout(() => { document.getElementById('ai-preview').innerHTML = ''; loadBoard(); }, 2000);
+  } catch(e) {
+    preview.innerHTML = `<div class="preview"><span style="color:#f87171;font-size:13px">Erro ao criar: ${e.message}</span></div>`;
+  }
+}
+
+// ── ALIASES ──────────────────────────────────────────────
+function addAlias() {
+  const name = document.getElementById('alias-name-in').value.trim();
+  const email = document.getElementById('alias-email-in').value.trim();
+  if (!name || !email) return;
+  aliases[name] = email;
+  document.getElementById('alias-name-in').value = '';
+  document.getElementById('alias-email-in').value = '';
+  saveAliases();
+  renderAliases();
+}
+function removeAlias(name) { delete aliases[name]; saveAliases(); renderAliases(); }
+function saveAliases() {
+  try { localStorage.setItem('devops_board_aliases', JSON.stringify(aliases)); } catch(e) {}
+}
+function loadAliases() {
+  try { const s = localStorage.getItem('devops_board_aliases'); if (s) aliases = JSON.parse(s); } catch(e) {}
+}
+function savePAT(org, proj, pat) {
+  try { localStorage.setItem('devops_board_cfg', JSON.stringify({org, proj, pat})); } catch(e) {}
+}
+function loadPAT() {
+  try { const s = localStorage.getItem('devops_board_cfg'); if (s) { const c = JSON.parse(s); document.getElementById('org').value = c.org||'cooperpix'; document.getElementById('proj').value = c.proj||'Dados e Business Intelligence'; document.getElementById('pat').value = c.pat || ''; } } catch(e) {}
+}
+function renderAliases() {
+  const el = document.getElementById('alias-list');
+  if (!el) return;
+  const keys = Object.keys(aliases);
+  if (!keys.length) {
+    el.innerHTML = '<div style="font-size:13px;color:#444;padding:16px 0;text-align:center">Nenhum alias cadastrado ainda.</div>';
+    return;
+  }
+  el.innerHTML = keys.map(k => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#1a1a1a;border:1px solid #252525;border-radius:8px;margin-bottom:6px">
+      <span style="font-weight:600;color:#e8e6e0;min-width:120px;font-size:13px">${k}</span>
+      <span style="color:#444;font-size:12px">→</span>
+      <span style="color:#666;font-size:12px;flex:1">${aliases[k]}</span>
+      <span onclick="removeAlias('${k}')" style="font-size:11px;color:#f87171;cursor:pointer;padding:3px 8px;border:1px solid #3a1212;border-radius:5px;background:#1a0808">remover</span>
+    </div>`).join('');
+}
+
+// ── TABS ─────────────────────────────────────────────────
+function showTab(t) {
+  document.getElementById('tab-board').style.display = 'flex';
+}
+
+// ── VOICE INPUT ──────────────────────────────────────────
+let recognition = null;
+let isRecording = false;
+
+function toggleVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    alert('Seu navegador não suporta reconhecimento de voz. Use o Edge ou Chrome.');
+    return;
+  }
+  if (isRecording) {
+    stopVoice();
+  } else {
+    startVoice();
+  }
+}
+
+function startVoice() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'pt-BR';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+
+  const btn = document.getElementById('voice-btn');
+  const input = document.getElementById('ai-input');
+
+  recognition.onstart = () => {
+    isRecording = true;
+    btn.classList.add('recording');
+    btn.textContent = '⏹️';
+    btn.title = 'Clique para parar';
+    input.placeholder = 'Ouvindo... fale a demanda';
+  };
+
+  recognition.onresult = (e) => {
+    let transcript = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript;
+    }
+    input.value = transcript;
+  };
+
+  recognition.onend = () => {
+    stopVoice();
+    // Auto-generate if there's content
+    if (input.value.trim().length > 10) {
+      setTimeout(() => generateCard(), 500);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    stopVoice();
+    if (e.error !== 'no-speech') alert('Erro no reconhecimento de voz: ' + e.error);
+  };
+
+  recognition.start();
+}
+
+function stopVoice() {
+  if (recognition) recognition.stop();
+  isRecording = false;
+  const btn = document.getElementById('voice-btn');
+  if (btn) {
+    btn.classList.remove('recording');
+    btn.textContent = '🎙️';
+    btn.title = 'Clique e fale a demanda';
+  }
+  const input = document.getElementById('ai-input');
+  if (input) input.placeholder = 'Ex: Bug no relatório de inadimplência do Financeiro para o Gabriel, sprint 4...';
+}
+
+// ── ALIASES MODAL ────────────────────────────────────────
+function openAliasesModal() {
+  renderAliases();
+  document.getElementById('aliases-modal').style.display = 'flex';
+}
+function closeAliasesModal() {
+  document.getElementById('aliases-modal').style.display = 'none';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAliasesModal(); });
+
+// ── INIT ─────────────────────────────────────────────────
+// Ask for Anthropic key on first use
+if (!localStorage.getItem('anthropic_key')) {
+  const key = prompt('Cole sua chave da API Anthropic (sk-ant-...):\n\nEssa chave ficará salva no seu navegador e não será enviada a ninguém além da API da Anthropic.');
+  if (key && key.startsWith('sk-ant-')) {
+    localStorage.setItem('anthropic_key', key);
+  }
+}
+loadAliases();
+// Always ensure Gabriel alias exists
+aliases["Gabriel"] = "gabriel.preste@coopertec.com.br";
+aliases["gabriel"] = "gabriel.preste@coopertec.com.br";
+saveAliases();
+// Pre-load area paths if not cached
+try {
+  const savedAreas = localStorage.getItem('devops_area_paths');
+  if (!savedAreas) {
+    areaPaths = [
+      "Dados e Business Intelligence",
+      "Dados e Business Intelligence\\svc.azureger",
+      "Dados e Business Intelligence\\Administrativo",
+      "Dados e Business Intelligence\\Comercial e IM",
+      "Dados e Business Intelligence\\Dados e Analytics",
+      "Dados e Business Intelligence\\Contabilidade",
+      "Dados e Business Intelligence\\Call Center",
+      "Dados e Business Intelligence\\Operacional",
+      "Dados e Business Intelligence\\Financeiro",
+      "Dados e Business Intelligence\\Cobrança",
+      "Dados e Business Intelligence\\Tecnologia",
+      "Dados e Business Intelligence\\Processos e Produtos",
+      "Dados e Business Intelligence\\Crédito",
+      "Dados e Business Intelligence\\GRCCI"
+    ];
+    localStorage.setItem('devops_area_paths', JSON.stringify(areaPaths));
+  }
+} catch(e) {}
+loadPAT();
+renderAliases();
+</script>
+<div id="aliases-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:24px;width:520px;max-width:92vw;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <span style="font-size:15px;font-weight:600;color:#f0ede8">Responsáveis</span>
+      <button onclick="closeAliasesModal()" style="font-size:18px;background:none;border:none;color:#666;cursor:pointer">✕</button>
+    </div>
+    <div style="font-size:13px;color:#666;margin-bottom:16px;line-height:1.5">Cadastre o alias e o e-mail. Ao mencionar o nome no texto, o e-mail é preenchido automaticamente pela IA.</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <input id="alias-name-in" placeholder="Alias (ex: Paulo)" style="width:150px;font-size:13px;padding:8px 11px;border:1px solid #2a2a2a;border-radius:7px;background:#111;color:#e8e6e0;font-family:inherit"/>
+      <input id="alias-email-in" placeholder="E-mail completo" style="flex:1;min-width:180px;font-size:13px;padding:8px 11px;border:1px solid #2a2a2a;border-radius:7px;background:#111;color:#e8e6e0;font-family:inherit"/>
+      <button onclick="addAlias()" style="padding:8px 14px;font-size:13px;border:1px solid #0078d4;border-radius:7px;background:#0a1a2a;color:#60a5fa;cursor:pointer;font-family:inherit">+ Adicionar</button>
+    </div>
+    <div id="alias-list"></div>
+  </div>
+</div>
+</body>
+</html>
