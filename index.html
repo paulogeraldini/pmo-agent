@@ -289,7 +289,7 @@
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────
-const ANTHROPIC_API_KEY = localStorage.getItem('anthropic_key') || ''; // deixe vazio — a chave é injetada pelo Claude.ai quando rodando lá
+const ANTHROPIC_API_KEY = ''; // loaded dynamically via getKey() // deixe vazio — a chave é injetada pelo Claude.ai quando rodando lá
 // Para uso local, insira sua chave aqui: 'sk-ant-...'
 
 const COLS = ['Backlog','Em Andamento','Impedido','Impedido QA','Concluído'];
@@ -705,7 +705,8 @@ Retorne APENAS JSON válido sem markdown com os campos:
 - pbiId: number ou null (ID do PBI mencionado no texto ex: "PBI 42" ou "vincular ao 42", ou null)
 - tags: array de strings (tipo de demanda: bug/melhoria/novo-recurso/análise/suporte se identificado, e outras tags relevantes; pode ser array vazio)${aliasHint}${areaHint}`;
 
-    const apiKey = ANTHROPIC_API_KEY;
+    const apiKey = getKey();
+    if (!apiKey) { const k = prompt('Cole sua chave da API Anthropic (sk-ant-...) para usar a IA:'); if (k && k.startsWith('sk-ant-')) { saveKey(k); } else { preview.innerHTML = '<div class="preview"><span style="color:#f87171;font-size:13px">Chave Anthropic necessária para gerar tasks com IA.</span></div>'; return; } }
     const body = {
       model: 'claude-sonnet-4-20250514',
       max_tokens: 600,
@@ -1064,12 +1065,18 @@ function closeAliasesModal() {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAliasesModal(); });
 
 // ── INIT ─────────────────────────────────────────────────
-// Ask for Anthropic key on first use
-if (!localStorage.getItem('anthropic_key')) {
-  const key = prompt('Cole sua chave da API Anthropic (sk-ant-...):\n\nEssa chave ficará salva no seu navegador e não será enviada a ninguém além da API da Anthropic.');
-  if (key && key.startsWith('sk-ant-')) {
-    localStorage.setItem('anthropic_key', key);
-  }
+// Key storage helper - works in Teams (sessionStorage) and browser (localStorage)
+function getKey() {
+  try { return localStorage.getItem('anthropic_key') || sessionStorage.getItem('anthropic_key') || ''; } catch(e) { return ''; }
+}
+function saveKey(k) {
+  try { localStorage.setItem('anthropic_key', k); } catch(e) {}
+  try { sessionStorage.setItem('anthropic_key', k); } catch(e) {}
+}
+// Ask for Anthropic key only if not saved anywhere
+if (!getKey()) {
+  const key = prompt('Cole sua chave da API Anthropic (sk-ant-...):\n\nEssa chave ficará salva para esta sessão.');
+  if (key && key.startsWith('sk-ant-')) saveKey(key);
 }
 loadAliases();
 // Always ensure Gabriel alias exists
