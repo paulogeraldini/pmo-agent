@@ -1220,11 +1220,9 @@ async function importHistoryFromDevOps(forceReimport) {
             const oldState = stateChange.oldValue || '';
             if (normalizeState(oldState) === normalizeState(newState)) return;
 
-            // Usar System.ChangedDate.newValue como fonte primária (é a data real da mudança)
-            // revisedDate é quando a revisão foi substituída — não usar
-            const rawDate = upd.fields?.['System.ChangedDate']?.newValue
-                         || upd.fields?.['System.AuthorizedDate']?.newValue
-                         || upd.revisedDate;
+            // NUNCA usar revisedDate — o DevOps coloca 31/12/9998 quando é a revisão mais recente
+            // Sempre usar System.ChangedDate.newValue que é a data real da mudança
+            const rawDate = upd.fields?.['System.ChangedDate']?.newValue;
             if (!rawDate) return;
             const changedDate = new Date(rawDate);
             if (isNaN(changedDate.getTime())) return;
