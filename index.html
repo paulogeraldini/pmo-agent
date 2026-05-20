@@ -223,6 +223,9 @@
   .card-stale-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#f59e0b;background:#1a1000;border:1px solid #3a2800;border-radius:4px;padding:1px 6px;margin-top:4px}
   .card.stale-warning{border-color:#3a2800 !important}
   .card.stale-danger{border-color:#3a1212 !important}
+  .card.done-old{border-color:#2a1f00 !important;opacity:.7}
+  .card-done-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#888;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:4px;padding:1px 6px;margin-top:4px}
+  .done-old-warning{font-size:11px;color:#f59e0b;background:#1a1000;border:1px solid #3a2800;border-radius:6px;padding:6px 10px;margin:6px 0 4px;text-align:center}
 
   /* ── WIP LIMIT ── */
   .col-header{display:flex;align-items:center;gap:6px}
@@ -639,7 +642,7 @@ async function loadBoard() {
     '<div style="grid-column:1/-1;padding:20px;color:#555;font-size:13px">Carregando<span class="dot">...</span></div>';
   try {
     // Use search endpoint instead of WIQL
-    const fields = 'System.Id,System.Title,System.State,Microsoft.VSTS.Common.Priority,System.AreaPath,System.AssignedTo,Custom.HorasOriginais,System.Tags,System.WorkItemType';
+    const fields = 'System.Id,System.Title,System.State,Microsoft.VSTS.Common.Priority,System.AreaPath,System.AssignedTo,Custom.HorasOriginais,System.Tags,System.WorkItemType,System.ChangedDate';
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
       { method:'POST', headers:hdrs(), body:JSON.stringify({
@@ -671,7 +674,8 @@ async function loadBoard() {
       assignedTo: w.fields['System.AssignedTo']?.displayName || w.fields['System.AssignedTo'] || null,
       hours: w.fields['Custom.HorasOriginais'] || null,
       tags: (w.fields['System.Tags'] || '').split(';').map(t => t.trim()).filter(Boolean),
-      col: colIndex(w.fields['System.State'] || 'Backlog')
+      col: colIndex(w.fields['System.State'] || 'Backlog'),
+      changedDate: w.fields['System.ChangedDate'] ? new Date(w.fields['System.ChangedDate']).getTime() : null
     }));
     renderBoard();
   } catch(e) {
@@ -774,7 +778,19 @@ function renderBoard() {
     const wipOver = wip > 0 && allInCol > wip;
     const wipWarn = wip > 0 && allInCol === wip;
     let wipBadge = '';
-    if (wip > 0) {
+
+    // WIP especial para Concluído: contar cards > 30 dias
+    const DONE_OLD_DAYS = 30;
+    let doneOldCount = 0;
+    let doneOldWarning = '';
+    if (ci === 4) {
+      const now = Date.now();
+      doneOldCount = cards.filter(c => c.changedDate && (now - c.changedDate) > DONE_OLD_DAYS * 86400000).length;
+      if (doneOldCount > 0) {
+        doneOldWarning = `<div class="done-old-warning">🗂 ${doneOldCount} card${doneOldCount > 1 ? 's' : ''} concluído${doneOldCount > 1 ? 's' : ''} há mais de ${DONE_OLD_DAYS} dias — considere arquivar</div>`;
+        wipBadge = `<span class="wip-badge wip-warn">${doneOldCount} antigos</span>`;
+      }
+    } else if (wip > 0) {
       const cls = wipOver ? 'wip-over' : wipWarn ? 'wip-warn' : 'wip-ok';
       wipBadge = `<span class="wip-badge ${cls}">${allInCol}/${wip}</span>`;
     }
@@ -791,11 +807,17 @@ function renderBoard() {
         <span class="col-count">${cards.length}</span>
         ${wipBadge}
       </div>
+      ${doneOldWarning}
       ${cards.length === 0 ? '<div class="empty-col">Nenhuma task</div>' : ''}
       ${cards.map(c => {
         const stale = getStaleInfo(c.id, ci);
-        const staleClass = stale ? (stale.level === 'danger' ? 'stale-danger' : 'stale-warning') : '';
-        const staleBadge = stale
+        const now = Date.now();
+        const isDoneOld = ci === 4 && c.changedDate && (now - c.changedDate) > DONE_OLD_DAYS * 86400000;
+        const daysOld = isDoneOld ? Math.floor((now - c.changedDate) / 86400000) : 0;
+        const staleClass = isDoneOld ? 'done-old' : stale ? (stale.level === 'danger' ? 'stale-danger' : 'stale-warning') : '';
+        const staleBadge = isDoneOld
+          ? `<div class="card-done-badge">🗂 concluído há ${daysOld}d</div>`
+          : stale
           ? `<div class="card-stale-badge">⏱ ${stale.days}d parado${stale.level === 'danger' ? ' ⚠️' : ''}</div>`
           : '';
         return `
