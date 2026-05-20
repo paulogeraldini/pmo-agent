@@ -429,6 +429,9 @@
     </div>
   </div>
 </div>
+
+<!-- MODAL ITEM -->
+<div class="modal-overlay" id="modal" onclick="closeModalOutside(event)">
   <div class="modal">
     <div class="modal-title" id="m-title"></div>
     <div id="m-body"></div>
@@ -903,6 +906,12 @@ function openItem(id) {
 
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 function closeModalOutside(e) { if (e.target.id === 'modal') closeModal(); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeModal();
+    document.getElementById('export-modal')?.classList.remove('open');
+  }
+});
 
 // ── MOVE ITEM ────────────────────────────────────────────
 async function moveItem(id, colIdx) {
