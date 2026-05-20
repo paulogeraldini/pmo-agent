@@ -1215,25 +1215,29 @@ async function importHistoryFromDevOps(forceReimport) {
           updates.forEach(upd => {
             const stateChange = upd.fields && upd.fields['System.State'];
             if (!stateChange) return;
-            // Precisa ter newValue definido
             const newState = stateChange.newValue;
             if (!newState) return;
             const oldState = stateChange.oldValue || '';
-            // Ignorar se não houve mudança real
             if (normalizeState(oldState) === normalizeState(newState)) return;
 
-            const changedDate = new Date(upd.revisedDate || upd.fields?.['System.ChangedDate']?.newValue);
+            // Usar System.ChangedDate.newValue como fonte primária (é a data real da mudança)
+            // revisedDate é quando a revisão foi substituída — não usar
+            const rawDate = upd.fields?.['System.ChangedDate']?.newValue
+                         || upd.fields?.['System.AuthorizedDate']?.newValue
+                         || upd.revisedDate;
+            if (!rawDate) return;
+            const changedDate = new Date(rawDate);
             if (isNaN(changedDate.getTime())) return;
             if (changedDate < HISTORY_START) return;
 
-            const fromCol = oldState ? colIndex(oldState) : -1; // -1 = criado neste estado
+            const fromCol = colIndex(oldState);
             const toCol   = colIndex(newState);
 
-            // Ignorar se destino não foi mapeado e origem também não (ruído)
-            if (toCol === 0 && normalizeState(newState) !== 'backlog' &&
-                !['to do','new','open','approved','planejado'].some(k => normalizeState(newState).includes(k))) {
-              // Estado desconhecido — ainda registra mas com toCol correto
-            }
+            // Filtrar ruído: só registrar se houve mudança real de coluna
+            // OU se é a primeira transição do item (criação com estado já definido)
+            const isRealMove = fromCol !== toCol;
+            const isCreation = !stateChange.oldValue; // oldValue null = criação
+            if (!isRealMove && !isCreation) return;
 
             const title = meta.title
               || upd.fields?.['System.Title']?.newValue
@@ -1248,11 +1252,12 @@ async function importHistoryFromDevOps(forceReimport) {
               ts: changedDate.getTime(),
               id,
               title,
-              fromCol: fromCol < 0 ? 0 : fromCol,
+              fromCol,
               toCol,
               toColName: COLS[toCol] || newState,
               areaShort: meta.areaShort || '',
               assignedTo,
+              rawNewState: newState, // debug: guardar estado original
               source: 'devops'
             });
           });
@@ -1273,7 +1278,13 @@ async function importHistoryFromDevOps(forceReimport) {
     localStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(pruned));
     localStorage.setItem(SPRINT_IMPORT_KEY, new Date().toISOString());
 
-    if (statusEl) statusEl.innerHTML = `✅ ${imported.length} movimentações importadas de ${processed} itens.`;
+    if (statusEl) {
+      const breakdown = COLS.map((col, i) => {
+        const n = imported.filter(m => m.toCol === i).length;
+        return n > 0 ? `${col}: ${n}` : null;
+      }).filter(Boolean).join(' · ');
+      statusEl.innerHTML = `✅ ${imported.length} movimentações importadas de ${processed} itens.${breakdown ? '<br><span style="font-size:11px;color:#444">' + breakdown + '</span>' : ''}`;
+    }
     setTimeout(() => {
       if (statusEl) statusEl.style.display = 'none';
       if (btnEl) btnEl.disabled = false;
