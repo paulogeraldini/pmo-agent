@@ -333,9 +333,12 @@
             <div class="sprint-period" id="sprint-period-label">—</div>
             <button onclick="sprintNavNext()" id="sprint-next-btn">Próxima →</button>
           </div>
+          <button id="sprint-import-btn" class="btn-sm" onclick="importHistoryFromDevOps(true)" style="color:#60a5fa;border-color:#0a2a3a;background:#0a1a2a">↓ Importar histórico</button>
           <button class="btn-sm" onclick="clearSprintData()" style="color:#f87171;border-color:#3a1212">🗑 Limpar dados</button>
         </div>
       </div>
+      <!-- Status importação -->
+      <div id="sprint-import-status" style="display:none;font-size:12px;color:#60a5fa;background:#0a1a2a;border:1px solid #0a2a3a;border-radius:7px;padding:8px 14px;margin-bottom:14px"></div>
 
       <!-- KPIs -->
       <div class="sprint-kpis" id="sprint-kpis"></div>
@@ -1070,6 +1073,8 @@ function showTab(t) {
     btnBoard.classList.remove('active');
     btnSprint.classList.add('active');
     renderSprintDashboard();
+    // Importação automática na primeira vez
+    if (cfg && cfg.pat) importHistoryFromDevOps(false);
   } else {
     board.style.display = 'flex';
     sprint.style.display = 'none';
@@ -1080,15 +1085,14 @@ function showTab(t) {
 
 // ── SPRINT TRACKING ──────────────────────────────────────
 const SPRINT_STORAGE_KEY = 'pmo_sprint_moves';
+const SPRINT_IMPORT_KEY  = 'pmo_sprint_imported'; // flag: já importou histórico?
 let sprintOffset = 0; // 0 = sprint atual, -1 = anterior, etc.
+let sprintImporting = false;
 
 function sprintWindow(offset) {
-  // Returns { start: Date, end: Date } for a 15-day window
   const now = new Date();
-  // Find the start of the current sprint (aligned to day 1 or 16 of month)
   const day = now.getDate();
   let sprintStart = new Date(now.getFullYear(), now.getMonth(), day <= 15 ? 1 : 16);
-  // Apply offset (each unit = 15 days back)
   sprintStart = new Date(sprintStart.getTime() + offset * 15 * 24 * 60 * 60 * 1000);
   const sprintEnd = new Date(sprintStart.getTime() + 15 * 24 * 60 * 60 * 1000 - 1);
   return { start: sprintStart, end: sprintEnd };
@@ -1099,24 +1103,26 @@ function formatSprintDate(d) {
 }
 
 function recordMove(item, fromCol, toCol) {
-  const SPRINT_STORAGE_KEY = 'pmo_sprint_moves';
   try {
     const raw = localStorage.getItem(SPRINT_STORAGE_KEY);
     const log = raw ? JSON.parse(raw) : [];
+    // Evitar duplicata exata (mesmo id + toCol nos últimos 5s)
+    const now = Date.now();
+    const dup = log.find(e => e.id === item.id && e.toCol === toCol && (now - e.ts) < 5000);
+    if (dup) return;
     log.push({
-      ts: Date.now(),
+      ts: now,
       id: item.id,
       title: item.title,
       fromCol,
       toCol,
       toColName: COLS[toCol],
       areaShort: item.areaShort || '',
-      assignedTo: item.assignedTo || ''
+      assignedTo: item.assignedTo || '',
+      source: 'manual'
     });
-    // Keep only 6 months of data (roughly 12 sprints × ~60 moves each)
-    const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
-    const pruned = log.filter(e => e.ts >= sixMonthsAgo);
-    localStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(pruned));
+    const sixMonthsAgo = now - 180 * 24 * 60 * 60 * 1000;
+    localStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(log.filter(e => e.ts >= sixMonthsAgo)));
   } catch(e) { console.warn('sprint record error:', e); }
 }
 
@@ -1128,14 +1134,132 @@ function loadSprintMoves() {
 }
 
 function clearSprintData() {
-  if (!confirm('Limpar todo o histórico de movimentações? Esta ação não pode ser desfeita.')) return;
-  try { localStorage.removeItem(SPRINT_STORAGE_KEY); } catch(e) {}
+  if (!confirm('Limpar todo o histórico de movimentações (incluindo dados importados do Azure DevOps)? Esta ação não pode ser desfeita.')) return;
+  try {
+    localStorage.removeItem(SPRINT_STORAGE_KEY);
+    localStorage.removeItem(SPRINT_IMPORT_KEY);
+  } catch(e) {}
   renderSprintDashboard();
 }
 
 function sprintNavPrev() { sprintOffset -= 1; renderSprintDashboard(); }
 function sprintNavNext() {
   if (sprintOffset < 0) { sprintOffset += 1; renderSprintDashboard(); }
+}
+
+// ── IMPORTAR HISTÓRICO DO AZURE DEVOPS ───────────────────
+async function importHistoryFromDevOps(forceReimport) {
+  if (sprintImporting) return;
+  const alreadyDone = localStorage.getItem(SPRINT_IMPORT_KEY);
+  if (alreadyDone && !forceReimport) return;
+
+  sprintImporting = true;
+  const statusEl = document.getElementById('sprint-import-status');
+  const btnEl    = document.getElementById('sprint-import-btn');
+  if (statusEl) statusEl.style.display = 'block';
+  if (btnEl)    btnEl.disabled = true;
+
+  const HISTORY_START = new Date('2026-05-01T00:00:00.000Z');
+  const imported = [];
+  let processed = 0;
+
+  try {
+    // 1. Buscar IDs de todos os work items alterados desde 01/05
+    const wiqlQuery = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@project AND [System.WorkItemType] IN ('Task','Product Backlog Item') AND [System.AreaPath] UNDER '${cfg.proj}' AND [System.ChangedDate] >= '2026-05-01' ORDER BY [System.ChangedDate] DESC`;
+    const r = await fetch(
+      `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
+      { method:'POST', headers:hdrs(), body:JSON.stringify({ query: wiqlQuery }) }
+    );
+    if (!r.ok) throw new Error('WIQL HTTP ' + r.status);
+    const wiqlData = await r.json();
+    const ids = (wiqlData.workItems || []).map(w => w.id);
+
+    if (statusEl) statusEl.innerHTML = `⏳ Importando histórico de ${ids.length} itens do Azure DevOps...`;
+
+    // 2. Para cada item, buscar o histórico de updates em paralelo (lotes de 10)
+    const BATCH = 10;
+    // Carregar títulos dos itens para enriquecer o log
+    const titleMap = {};
+    items.forEach(i => { titleMap[i.id] = { title: i.title, areaShort: i.areaShort, assignedTo: i.assignedTo }; });
+
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const batch = ids.slice(i, i + BATCH);
+      await Promise.all(batch.map(async (id) => {
+        try {
+          const ru = await fetch(
+            `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${id}/updates?api-version=7.0`,
+            { headers: hdrs() }
+          );
+          if (!ru.ok) return;
+          const ud = await ru.json();
+          const updates = ud.value || [];
+          const meta = titleMap[id] || {};
+
+          updates.forEach(upd => {
+            const stateChange = upd.fields && upd.fields['System.State'];
+            if (!stateChange) return;
+            const changedDate = new Date(upd.revisedDate || upd.fields['System.ChangedDate']?.newValue);
+            if (isNaN(changedDate.getTime())) return;
+            if (changedDate < HISTORY_START) return;
+
+            const oldState = stateChange.oldValue || '';
+            const newState = stateChange.newValue || '';
+            if (!newState || oldState === newState) return;
+
+            const fromCol = colIndex(oldState);
+            const toCol   = colIndex(newState);
+
+            // Título: preferir do titleMap, senão do próprio update
+            const title = meta.title
+              || upd.fields?.['System.Title']?.newValue
+              || upd.fields?.['System.Title']?.oldValue
+              || `Item #${id}`;
+
+            const assignedTo = meta.assignedTo
+              || upd.fields?.['System.AssignedTo']?.newValue?.displayName
+              || '';
+
+            imported.push({
+              ts: changedDate.getTime(),
+              id,
+              title,
+              fromCol,
+              toCol,
+              toColName: COLS[toCol] || newState,
+              areaShort: meta.areaShort || '',
+              assignedTo,
+              source: 'devops'
+            });
+          });
+          processed++;
+        } catch(e) { /* ignora erros individuais */ }
+      }));
+
+      if (statusEl) statusEl.innerHTML = `⏳ Processados ${Math.min(i + BATCH, ids.length)} de ${ids.length} itens...`;
+    }
+
+    // 3. Mesclar com o log existente (sem duplicar entradas devops já importadas)
+    const existing = loadSprintMoves().filter(e => e.source !== 'devops');
+    const merged = [...existing, ...imported];
+    // Ordenar por timestamp
+    merged.sort((a, b) => a.ts - b.ts);
+    const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
+    const pruned = merged.filter(e => e.ts >= sixMonthsAgo);
+    localStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(pruned));
+    localStorage.setItem(SPRINT_IMPORT_KEY, new Date().toISOString());
+
+    if (statusEl) statusEl.innerHTML = `✅ ${imported.length} movimentações importadas de ${processed} itens.`;
+    setTimeout(() => {
+      if (statusEl) statusEl.style.display = 'none';
+      if (btnEl) btnEl.disabled = false;
+      renderSprintDashboard();
+    }, 2500);
+  } catch(e) {
+    if (statusEl) statusEl.innerHTML = `❌ Erro na importação: ${e.message}`;
+    if (btnEl) btnEl.disabled = false;
+  } finally {
+    sprintImporting = false;
+  }
 }
 
 function renderSprintDashboard() {
