@@ -371,6 +371,7 @@
             <button onclick="sprintNavNext()" id="sprint-next-btn">Próxima →</button>
           </div>
           <button id="sprint-import-btn" class="btn-sm" onclick="importHistoryFromDevOps(true)" style="color:#60a5fa;border-color:#0a2a3a;background:#0a1a2a">↓ Importar histórico</button>
+          <button class="btn-sm" onclick="openExportModal()" style="color:#a78bfa;border-color:#2a1a4a;background:#0f0a1f">📄 Exportar PDF</button>
           <button class="btn-sm" onclick="clearSprintData()" style="color:#f87171;border-color:#3a1212">🗑 Limpar dados</button>
         </div>
       </div>
@@ -398,8 +399,36 @@
   </div>
 </div>
 
-<!-- MODAL -->
-<div class="modal-overlay" id="modal" onclick="closeModalOutside(event)">
+<!-- EXPORT MODAL -->
+<div class="modal-overlay" id="export-modal" onclick="closeExportModal(event)">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">📄 Exportar Relatório PDF</div>
+    <div class="modal-body" style="padding-top:4px">
+      <div style="font-size:12px;color:#555;margin-bottom:16px">Selecione o período para o relatório de performance</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px">De</label>
+          <input type="date" id="export-date-from" style="width:100%;font-size:13px;font-family:inherit;padding:7px 10px;border:1px solid #2a2a2a;border-radius:7px;background:#111;color:#e8e6e0;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px">Até</label>
+          <input type="date" id="export-date-to" style="width:100%;font-size:13px;font-family:inherit;padding:7px 10px;border:1px solid #2a2a2a;border-radius:7px;background:#111;color:#e8e6e0;box-sizing:border-box">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <button class="btn-sm" onclick="setExportPreset('sprint-current')" style="font-size:11px">Sprint atual</button>
+          <button class="btn-sm" onclick="setExportPreset('sprint-prev')" style="font-size:11px">Sprint anterior</button>
+          <button class="btn-sm" onclick="setExportPreset('month')" style="font-size:11px">Mês atual</button>
+          <button class="btn-sm" onclick="setExportPreset('all')" style="font-size:11px">Todo histórico</button>
+        </div>
+      </div>
+      <div id="export-preview" style="margin-top:14px;font-size:12px;color:#555;background:#141414;border:1px solid #222;border-radius:7px;padding:10px 12px;min-height:36px"></div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button onclick="generatePDF()" style="flex:1;padding:10px;font-size:13px;font-weight:600;border:1px solid #4c1d95;border-radius:8px;background:#2e1065;color:#a78bfa;cursor:pointer">📄 Gerar PDF</button>
+        <button onclick="document.getElementById('export-modal').classList.remove('open')" style="padding:10px 16px;font-size:13px;border:1px solid #2a2a2a;border-radius:8px;background:#111;color:#666;cursor:pointer">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
   <div class="modal">
     <div class="modal-title" id="m-title"></div>
     <div id="m-body"></div>
@@ -643,10 +672,15 @@ async function loadBoard() {
   try {
     // Use search endpoint instead of WIQL
     const fields = 'System.Id,System.Title,System.State,Microsoft.VSTS.Common.Priority,System.AreaPath,System.AssignedTo,Custom.HorasOriginais,System.Tags,System.WorkItemType,System.ChangedDate';
+    // Data dinâmica: 30 dias atrás no formato YYYY-MM-DD
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
       { method:'POST', headers:hdrs(), body:JSON.stringify({
-        query:`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@project AND [System.WorkItemType] IN ('Task','Product Backlog Item') AND [System.AreaPath] UNDER '${cfg.proj}' ORDER BY [System.ChangedDate] DESC`
+        query:`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@project AND [System.WorkItemType] IN ('Task','Product Backlog Item') AND [System.AreaPath] UNDER '${cfg.proj}' AND (
+          [System.State] NOT IN ('Done','Concluído','Closed','Resolved','Completed','Removed')
+          OR [System.ChangedDate] >= '${cutoff}'
+        ) ORDER BY [System.ChangedDate] DESC`
       })}
     );
     if (!r.ok) {
@@ -1262,6 +1296,249 @@ function loadSprintMoves() {
   } catch(e) { return []; }
 }
 
+// ── EXPORTAÇÃO PDF ───────────────────────────────────────
+function openExportModal() {
+  // Preencher com sprint atual como padrão
+  setExportPreset('sprint-current');
+  document.getElementById('export-modal').classList.add('open');
+  updateExportPreview();
+}
+
+function closeExportModal(e) {
+  if (e.target.id === 'export-modal') document.getElementById('export-modal').classList.remove('open');
+}
+
+function setExportPreset(preset) {
+  const now = new Date();
+  let from, to;
+  if (preset === 'sprint-current') {
+    const day = now.getDate();
+    from = new Date(now.getFullYear(), now.getMonth(), day <= 15 ? 1 : 16);
+    to   = new Date(now.getFullYear(), now.getMonth(), day <= 15 ? 15 : new Date(now.getFullYear(), now.getMonth()+1, 0).getDate());
+  } else if (preset === 'sprint-prev') {
+    const day = now.getDate();
+    if (day <= 15) {
+      from = new Date(now.getFullYear(), now.getMonth()-1, 16);
+      to   = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to   = new Date(now.getFullYear(), now.getMonth(), 15);
+    }
+  } else if (preset === 'month') {
+    from = new Date(now.getFullYear(), now.getMonth(), 1);
+    to   = new Date(now.getFullYear(), now.getMonth()+1, 0);
+  } else {
+    const moves = loadSprintMoves();
+    if (moves.length) {
+      from = new Date(Math.min(...moves.map(m => m.ts)));
+      to   = new Date(Math.max(...moves.map(m => m.ts)));
+    } else {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to   = now;
+    }
+  }
+  const fmt = d => d.toISOString().split('T')[0];
+  document.getElementById('export-date-from').value = fmt(from);
+  document.getElementById('export-date-to').value   = fmt(to);
+  updateExportPreview();
+}
+
+function updateExportPreview() {
+  const from = new Date(document.getElementById('export-date-from').value);
+  const to   = new Date(document.getElementById('export-date-to').value + 'T23:59:59');
+  if (isNaN(from) || isNaN(to)) return;
+  const moves = loadSprintMoves().filter(m => m.ts >= from.getTime() && m.ts <= to.getTime());
+  const planned = new Set(moves.filter(m => m.toCol === 1).map(m => m.id)).size;
+  const done    = new Set(moves.filter(m => m.toCol === 4).map(m => m.id)).size;
+  const rate    = planned > 0 ? Math.round(done/planned*100) : null;
+  const el = document.getElementById('export-preview');
+  if (el) el.innerHTML = moves.length === 0
+    ? '<span style="color:#444">Nenhuma movimentação no período selecionado</span>'
+    : `<strong style="color:#ccc">${moves.length}</strong> movimentações · <strong style="color:#60a5fa">${planned}</strong> iniciados · <strong style="color:#22c55e">${done}</strong> concluídos${rate !== null ? ` · <strong style="${rate>=80?'color:#22c55e':rate>=50?'color:#f59e0b':'color:#ef4444'}">${rate}%</strong> de entrega` : ''}`;
+}
+
+function generatePDF() {
+  const fromVal = document.getElementById('export-date-from').value;
+  const toVal   = document.getElementById('export-date-to').value;
+  if (!fromVal || !toVal) { alert('Selecione o período'); return; }
+
+  const from  = new Date(fromVal);
+  const to    = new Date(toVal + 'T23:59:59');
+  const moves = loadSprintMoves().filter(m => m.ts >= from.getTime() && m.ts <= to.getTime());
+
+  const COL_COLORS_HEX = ['#888888','#3b82f6','#ef4444','#f59e0b','#22c55e'];
+  const counts  = Array(5).fill(0);
+  moves.forEach(m => { if (m.toCol >= 0 && m.toCol <= 4) counts[m.toCol]++; });
+  const total   = counts.reduce((a,b)=>a+b,0);
+  const planned = new Set(moves.filter(m=>m.toCol===1).map(m=>m.id)).size;
+  const done    = new Set(moves.filter(m=>m.toCol===4).map(m=>m.id)).size;
+  const rate    = planned > 0 ? Math.round(done/planned*100) : null;
+  const rateColor = rate===null?'#888':rate>=80?'#22c55e':rate>=50?'#f59e0b':'#ef4444';
+
+  const fmtDate = d => d.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const fmtShort = d => d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+
+  const sorted = [...moves].sort((a,b)=>b.ts-a.ts);
+  const maxCount = Math.max(...counts, 1);
+
+  // Gerar HTML do relatório
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório Sprint — Dados e BI — CooperTec</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#fff; color:#1a1a1a; font-size:13px; }
+  .page { max-width:800px; margin:0 auto; padding:40px 48px; }
+  .header { border-bottom:3px solid #1a1a1a; padding-bottom:20px; margin-bottom:28px; display:flex; justify-content:space-between; align-items:flex-end; }
+  .header-left h1 { font-size:22px; font-weight:700; color:#1a1a1a; }
+  .header-left p  { font-size:12px; color:#666; margin-top:3px; }
+  .header-right   { font-size:11px; color:#999; text-align:right; }
+  .period-badge   { display:inline-block; background:#f0f0f0; border-radius:6px; padding:6px 14px; font-size:13px; font-weight:600; color:#333; margin-bottom:24px; }
+
+  /* Commitment */
+  .section { margin-bottom:28px; }
+  .section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:#999; margin-bottom:12px; }
+  .commitment-box { border:1px solid #e5e5e5; border-radius:10px; padding:18px 20px; }
+  .commitment-nums { display:flex; gap:32px; margin-bottom:14px; }
+  .commitment-num  { text-align:center; }
+  .commitment-num .val { font-size:36px; font-weight:700; line-height:1; }
+  .commitment-num .lbl { font-size:11px; color:#888; margin-top:3px; text-transform:uppercase; letter-spacing:.5px; }
+  .rate-big { font-size:48px; font-weight:800; margin-left:auto; line-height:1; }
+  .track { height:16px; background:#f0f0f0; border-radius:4px; overflow:hidden; margin-bottom:6px; }
+  .track-fill { height:100%; border-radius:4px; }
+  .track-labels { display:flex; justify-content:space-between; font-size:10px; color:#aaa; }
+
+  /* KPIs */
+  .kpi-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  .kpi-box  { border:1px solid #e5e5e5; border-radius:8px; padding:12px 10px; text-align:center; }
+  .kpi-box .num { font-size:26px; font-weight:700; }
+  .kpi-box .lbl { font-size:10px; color:#999; text-transform:uppercase; letter-spacing:.4px; margin-top:2px; }
+
+  /* Bar chart */
+  .bar-row  { display:flex; align-items:center; gap:10px; margin-bottom:7px; }
+  .bar-label{ font-size:11px; color:#666; min-width:100px; text-align:right; }
+  .bar-track{ flex:1; height:18px; background:#f5f5f5; border-radius:3px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:3px; }
+  .bar-val  { font-size:11px; color:#666; min-width:24px; font-weight:600; }
+
+  /* Log */
+  .log-item { display:flex; align-items:flex-start; gap:10px; padding:8px 0; border-bottom:1px solid #f0f0f0; }
+  .log-item:last-child { border-bottom:none; }
+  .log-dot  { width:8px; height:8px; border-radius:50%; margin-top:3px; flex-shrink:0; }
+  .log-info { flex:1; }
+  .log-title{ font-size:12px; color:#1a1a1a; font-weight:500; }
+  .log-meta { font-size:11px; color:#999; margin-top:2px; }
+  .log-time { font-size:11px; color:#bbb; white-space:nowrap; flex-shrink:0; }
+
+  .footer { margin-top:40px; padding-top:16px; border-top:1px solid #e5e5e5; display:flex; justify-content:space-between; font-size:10px; color:#bbb; }
+  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="header-left">
+      <h1>Relatório de Performance</h1>
+      <p>Dados e Business Intelligence · CooperTec</p>
+    </div>
+    <div class="header-right">
+      PMO Agent<br>
+      Gerado em ${new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'})}
+    </div>
+  </div>
+
+  <div class="period-badge">📅 ${fmtDate(from)} — ${fmtDate(to)}</div>
+
+  <!-- Commitment -->
+  <div class="section">
+    <div class="section-title">Planejado vs Entregue</div>
+    <div class="commitment-box">
+      <div style="display:flex;align-items:center;gap:24px;margin-bottom:16px">
+        <div class="commitment-nums" style="margin-bottom:0">
+          <div class="commitment-num">
+            <div class="val" style="color:#3b82f6">${planned}</div>
+            <div class="lbl">Iniciados</div>
+          </div>
+          <div class="commitment-num">
+            <div class="val" style="color:#22c55e">${done}</div>
+            <div class="lbl">Concluídos</div>
+          </div>
+          <div class="commitment-num">
+            <div class="val" style="color:#888">${total}</div>
+            <div class="lbl">Movimentações</div>
+          </div>
+        </div>
+        <div style="margin-left:auto;text-align:center">
+          <div class="rate-big" style="color:${rateColor}">${rate !== null ? rate+'%' : '—'}</div>
+          <div style="font-size:11px;color:#999;margin-top:4px">${rate===null?'sem dados':rate>=80?'✅ Ótimo':rate>=50?'⚠️ Moderado':'🔴 Abaixo'}</div>
+        </div>
+      </div>
+      <div class="track"><div class="track-fill" style="width:${planned>0?Math.min(done/planned*100,100).toFixed(1):0}%;background:#22c55e"></div></div>
+      <div class="track-labels"><span>0</span><span>${planned} iniciados</span></div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="section">
+    <div class="section-title">Movimentações por coluna</div>
+    <div class="kpi-grid">
+      ${COLS.map((col,i)=>`
+      <div class="kpi-box">
+        <div class="num" style="color:${COL_COLORS_HEX[i]}">${counts[i]}</div>
+        <div class="lbl">${col}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- Bar chart -->
+  <div class="section">
+    <div class="section-title">Distribuição de movimentações</div>
+    ${COLS.map((col,i)=>`
+    <div class="bar-row">
+      <div class="bar-label">${col}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(counts[i]/maxCount*100).toFixed(1)}%;background:${COL_COLORS_HEX[i]}44;border-left:3px solid ${COL_COLORS_HEX[i]}"></div></div>
+      <div class="bar-val" style="color:${COL_COLORS_HEX[i]}">${counts[i]}</div>
+    </div>`).join('')}
+  </div>
+
+  <!-- Histórico -->
+  <div class="section">
+    <div class="section-title">Histórico de movimentações (${sorted.length} registros)</div>
+    ${sorted.length === 0
+      ? '<p style="color:#bbb;font-size:12px">Nenhuma movimentação no período.</p>'
+      : sorted.map(m=>`
+    <div class="log-item">
+      <div class="log-dot" style="background:${COL_COLORS_HEX[m.toCol]||'#888'}"></div>
+      <div class="log-info">
+        <div class="log-title">#${m.id} ${m.title}</div>
+        <div class="log-meta">${COLS[m.fromCol]||'?'} → <span style="color:${COL_COLORS_HEX[m.toCol]||'#888'};font-weight:600">${m.toColName}</span>${m.assignedTo?' · '+m.assignedTo.split(' ')[0]:''}${m.areaShort?' · '+m.areaShort:''}</div>
+      </div>
+      <div class="log-time">${new Date(m.ts).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} ${new Date(m.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`).join('')}
+  </div>
+
+  <div class="footer">
+    <span>PMO Agent · Dados e Business Intelligence · CooperTec</span>
+    <span>${fmtDate(from)} — ${fmtDate(to)}</span>
+  </div>
+</div>
+</body>
+</html>`;
+
+  // Abrir em nova aba e chamar print
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => {
+    setTimeout(() => {
+      win.print();
+    }, 300);
+  };
+  document.getElementById('export-modal').classList.remove('open');
+}
+
 function clearSprintData() {
   if (!confirm('Limpar todo o histórico de movimentações (incluindo dados importados do Azure DevOps)? Esta ação não pode ser desfeita.')) return;
   try {
@@ -1669,3 +1946,11 @@ renderAliases();
 </div>
 </body>
 </html>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const fromEl = document.getElementById('export-date-from');
+  const toEl   = document.getElementById('export-date-to');
+  if (fromEl) fromEl.addEventListener('change', updateExportPreview);
+  if (toEl)   toEl.addEventListener('change', updateExportPreview);
+});
+</script>
