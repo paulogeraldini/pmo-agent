@@ -214,6 +214,38 @@
   .sprint-nav button{padding:4px 12px;font-size:12px;border:1px solid #2a2a2a;border-radius:6px;background:#1a1a1a;color:#666;cursor:pointer;transition:all .15s}
   .sprint-nav button:hover{background:#222;color:#aaa}
   .sprint-nav button:disabled{opacity:.3;cursor:default}
+
+  /* ── FILTRO RESPONSÁVEL ── */
+  .filter-bar label{font-size:12px;color:#666}
+  #filter-assignee{font-size:12px;font-family:inherit;padding:4px 8px;border:1px solid #2a2a2a;border-radius:6px;background:#111;color:#e8e6e0;cursor:pointer}
+
+  /* ── CARD STALE (parado) ── */
+  .card-stale-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#f59e0b;background:#1a1000;border:1px solid #3a2800;border-radius:4px;padding:1px 6px;margin-top:4px}
+  .card.stale-warning{border-color:#3a2800 !important}
+  .card.stale-danger{border-color:#3a1212 !important}
+
+  /* ── WIP LIMIT ── */
+  .col-header{display:flex;align-items:center;gap:6px}
+  .wip-badge{font-size:10px;padding:1px 6px;border-radius:4px;font-weight:600}
+  .wip-ok{background:#0a2a0a;color:#22c55e;border:1px solid #1a3a1a}
+  .wip-warn{background:#2a1a00;color:#f59e0b;border:1px solid #3a2800}
+  .wip-over{background:#2a0a0a;color:#ef4444;border:1px solid #3a1212;animation:pulse-red .8s infinite alternate}
+  @keyframes pulse-red{from{opacity:1}to{opacity:.6}}
+
+  /* ── SPRINT COMMITMENT ── */
+  .commitment-bar{margin-bottom:20px}
+  .commitment-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .commitment-labels{display:flex;justify-content:space-between;font-size:11px;color:#555;margin-top:6px}
+  .commitment-track{flex:1;height:28px;background:#1a1a1a;border-radius:6px;overflow:hidden;position:relative;border:1px solid #222}
+  .commitment-fill-planned{height:100%;background:#1e3a5f;position:absolute;left:0;top:0;transition:width .5s}
+  .commitment-fill-done{height:100%;background:#14532d;position:absolute;left:0;top:0;transition:width .5s;opacity:.9}
+  .commitment-rate{font-size:22px;font-weight:700;min-width:60px;text-align:right}
+  .rate-good{color:#22c55e}
+  .rate-mid{color:#f59e0b}
+  .rate-low{color:#ef4444}
+  .commitment-nums{font-size:12px;color:#555;display:flex;gap:16px}
+  .commitment-nums span{display:flex;align-items:center;gap:5px}
+  .cn-dot{width:8px;height:8px;border-radius:2px;display:inline-block}
 </style>
 </head>
 <body>
@@ -287,6 +319,8 @@
           <option value="análise">análise</option>
           <option value="suporte">suporte</option>
         </select>
+        <label>Responsável:</label>
+        <select id="filter-assignee" onchange="renderBoard()"><option value="">Todos</option></select>
         <span class="filter-count" id="filter-count"></span>
       </div>
       <div class="board" id="board"></div>
@@ -339,6 +373,9 @@
       </div>
       <!-- Status importação -->
       <div id="sprint-import-status" style="display:none;font-size:12px;color:#60a5fa;background:#0a1a2a;border:1px solid #0a2a3a;border-radius:7px;padding:8px 14px;margin-bottom:14px"></div>
+
+      <!-- Commitment: Planejado vs Entregue -->
+      <div class="sprint-section commitment-bar" id="sprint-commitment"></div>
 
       <!-- KPIs -->
       <div class="sprint-kpis" id="sprint-kpis"></div>
@@ -683,12 +720,46 @@ async function dropCard(colIdx) {
 }
 
 // ── RENDER BOARD ─────────────────────────────────────────
+// WIP limits por coluna (0 = sem limite)
+const WIP_LIMITS = [0, 5, 3, 2, 0];
+const STALE_WARN_DAYS = 3;
+const STALE_DANGER_DAYS = 7;
+
+function getStaleInfo(itemId, colIdx) {
+  if (colIdx !== 1 && colIdx !== 2) return null;
+  const moves = loadSprintMoves();
+  const entries = moves
+    .filter(m => m.id === itemId && m.toCol === colIdx)
+    .sort((a, b) => b.ts - a.ts);
+  if (!entries.length) return null;
+  const daysSince = (Date.now() - entries[0].ts) / (1000 * 60 * 60 * 24);
+  if (daysSince >= STALE_DANGER_DAYS) return { days: Math.floor(daysSince), level: 'danger' };
+  if (daysSince >= STALE_WARN_DAYS)  return { days: Math.floor(daysSince), level: 'warning' };
+  return null;
+}
+
 function renderBoard() {
   const fa = document.getElementById('filter-area')?.value || '';
   const ft = document.getElementById('filter-type')?.value || '';
+  const fas = document.getElementById('filter-assignee')?.value || '';
+
+  // Popular filtro responsável dinamicamente
+  const assigneeEl = document.getElementById('filter-assignee');
+  if (assigneeEl) {
+    const current = assigneeEl.value;
+    const names = [...new Set(items.map(i => i.assignedTo).filter(Boolean))].sort();
+    assigneeEl.innerHTML = '<option value="">Todos</option>' +
+      names.map(n => {
+        const parts = n.split(' ');
+        const label = parts.length > 1 ? `${parts[0]} ${parts[parts.length-1]}` : n;
+        return `<option value="${n}" ${n === current ? 'selected' : ''}>${label}</option>`;
+      }).join('');
+  }
+
   const filtered = items.filter(i => {
     if (fa && !i.areaPath.includes(fa)) return false;
     if (ft && !i.tags.some(t => t.toLowerCase() === ft)) return false;
+    if (fas && i.assignedTo !== fas) return false;
     return true;
   });
   const countEl = document.getElementById('filter-count');
@@ -698,6 +769,16 @@ function renderBoard() {
   b.innerHTML = '';
   COLS.forEach((col, ci) => {
     const cards = filtered.filter(c => c.col === ci);
+    const allInCol = items.filter(c => c.col === ci).length;
+    const wip = WIP_LIMITS[ci];
+    const wipOver = wip > 0 && allInCol > wip;
+    const wipWarn = wip > 0 && allInCol === wip;
+    let wipBadge = '';
+    if (wip > 0) {
+      const cls = wipOver ? 'wip-over' : wipWarn ? 'wip-warn' : 'wip-ok';
+      wipBadge = `<span class="wip-badge ${cls}">${allInCol}/${wip}</span>`;
+    }
+
     const div = document.createElement('div');
     div.className = 'col ' + COL_CLASSES[ci];
     div.dataset.col = ci;
@@ -708,10 +789,17 @@ function renderBoard() {
       <div class="col-header">
         <span class="col-title">${col}</span>
         <span class="col-count">${cards.length}</span>
+        ${wipBadge}
       </div>
       ${cards.length === 0 ? '<div class="empty-col">Nenhuma task</div>' : ''}
-      ${cards.map(c => `
-        <div class="card" draggable="true"
+      ${cards.map(c => {
+        const stale = getStaleInfo(c.id, ci);
+        const staleClass = stale ? (stale.level === 'danger' ? 'stale-danger' : 'stale-warning') : '';
+        const staleBadge = stale
+          ? `<div class="card-stale-badge">⏱ ${stale.days}d parado${stale.level === 'danger' ? ' ⚠️' : ''}</div>`
+          : '';
+        return `
+        <div class="card ${staleClass}" draggable="true"
           ondragstart="dragStart(event,${c.id})"
           ondragend="dragEnd(event)"
           onclick="openItem(${c.id})">
@@ -723,7 +811,9 @@ function renderBoard() {
             ${c.hours ? `<span class="badge b-gray">${c.hours}h</span>` : ''}
             ${c.tags.slice(0, 2).map(t => `<span class="badge ${tagBadgeClass(t)}">${t}</span>`).join('')}
           </div>
-        </div>`).join('')}`;
+          ${staleBadge}
+        </div>`;
+      }).join('')}`;
     b.appendChild(div);
   });
 }
@@ -1313,6 +1403,44 @@ function renderSprintDashboard() {
   const counts = Array(5).fill(0);
   moves.forEach(m => { if (m.toCol >= 0 && m.toCol <= 4) counts[m.toCol]++; });
   const total = counts.reduce((a, b) => a + b, 0);
+
+  // ── COMMITMENT: Planejado (→ Em Andamento) vs Entregue (→ Concluído) ──
+  // Planejado = cards únicos que entraram em Em Andamento na sprint
+  const plannedIds = [...new Set(moves.filter(m => m.toCol === 1).map(m => m.id))];
+  const doneIds    = [...new Set(moves.filter(m => m.toCol === 4).map(m => m.id))];
+  const planned = plannedIds.length;
+  const done    = doneIds.length;
+  const rate    = planned > 0 ? Math.round((done / planned) * 100) : null;
+  const rateClass = rate === null ? '' : rate >= 80 ? 'rate-good' : rate >= 50 ? 'rate-mid' : 'rate-low';
+  const rateLabel = rate === null ? '—' : `${rate}%`;
+  const maxBar = Math.max(planned, done, 1);
+
+  const commitEl = document.getElementById('sprint-commitment');
+  if (commitEl) {
+    commitEl.innerHTML = `
+      <div class="sprint-section-title" style="margin-bottom:12px">
+        Planejado vs Entregue
+        <span>${planned > 0 ? 'cards únicos' : 'sem dados'}</span>
+      </div>
+      <div class="commitment-row">
+        <div style="flex:1">
+          <div class="commitment-track">
+            <div class="commitment-fill-planned" style="width:${(planned/maxBar*100).toFixed(1)}%"></div>
+            <div class="commitment-fill-done"    style="width:${(done/maxBar*100).toFixed(1)}%"></div>
+          </div>
+          <div class="commitment-labels">
+            <span>0</span>
+            <span>${maxBar}</span>
+          </div>
+        </div>
+        <div class="commitment-rate ${rateClass}">${rateLabel}</div>
+      </div>
+      <div class="commitment-nums">
+        <span><span class="cn-dot" style="background:#1e3a5f;border:1px solid #2a5a8f"></span>Iniciados: <strong style="color:#60a5fa">${planned}</strong></span>
+        <span><span class="cn-dot" style="background:#14532d;border:1px solid #22c55e44"></span>Concluídos: <strong style="color:#22c55e">${done}</strong></span>
+        ${rate !== null ? `<span style="color:#555;margin-left:auto;font-size:11px">${rate >= 80 ? '✅ Ótimo ritmo' : rate >= 50 ? '⚠️ Ritmo moderado' : '🔴 Abaixo do esperado'}</span>` : ''}
+      </div>`;
+  }
 
   // KPI cards
   const COL_COLORS = ['#888','#3b82f6','#ef4444','#f59e0b','#22c55e'];
