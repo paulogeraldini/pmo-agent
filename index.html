@@ -408,10 +408,27 @@ let pending = null;
 let pendingTags = [];
 
 // ── UTILS ────────────────────────────────────────────────
+function normalizeState(s) {
+  if (!s) return '';
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .trim();
+}
 function colIndex(s) {
   if (!s) return 0;
-  const sl = s.toLowerCase();
-  for (const k of Object.keys(COL_MAP)) { if (sl.includes(k)) return COL_MAP[k]; }
+  const sl = normalizeState(s);
+  // ATENÇÃO: ordem importa — entradas mais específicas primeiro
+  const MAP_NORM = [
+    ['impedido qa', 3],
+    ['to do', 0], ['backlog', 0], ['new', 0], ['open', 0], ['approved', 0], ['planejado', 0], ['prioridades', 0], ['apontar horas', 0],
+    ['in progress', 1], ['em desenvolvimento', 1], ['em andamento', 1], ['active', 1], ['committed', 1], ['em teste qa', 1],
+    ['subir para producao', 1], ['reanalise', 1], ['em validacao producao', 1], ['subir qa', 1],
+    ['validacao area de negocios', 1], ['pronto para teste qa', 1], ['pronto para producao', 1],
+    ['validacao pre-prod', 1], ['cross-sprint', 1], ['reanalise qa', 1],
+    ['impedido', 2], ['blocked', 2], ['bloqueado', 2],
+    ['done', 4], ['concluido', 4], ['closed', 4], ['resolved', 4], ['completed', 4], ['removed', 4]
+  ];
+  for (const [k, v] of MAP_NORM) { if (sl.includes(k)) return v; }
   return 0;
 }
 function priorityBadge(p) { return {'1':'b-purple','2':'b-red','3':'b-amber','4':'b-green'}[String(p||'')] || 'b-gray'; }
@@ -1198,18 +1215,26 @@ async function importHistoryFromDevOps(forceReimport) {
           updates.forEach(upd => {
             const stateChange = upd.fields && upd.fields['System.State'];
             if (!stateChange) return;
-            const changedDate = new Date(upd.revisedDate || upd.fields['System.ChangedDate']?.newValue);
+            // Precisa ter newValue definido
+            const newState = stateChange.newValue;
+            if (!newState) return;
+            const oldState = stateChange.oldValue || '';
+            // Ignorar se não houve mudança real
+            if (normalizeState(oldState) === normalizeState(newState)) return;
+
+            const changedDate = new Date(upd.revisedDate || upd.fields?.['System.ChangedDate']?.newValue);
             if (isNaN(changedDate.getTime())) return;
             if (changedDate < HISTORY_START) return;
 
-            const oldState = stateChange.oldValue || '';
-            const newState = stateChange.newValue || '';
-            if (!newState || oldState === newState) return;
-
-            const fromCol = colIndex(oldState);
+            const fromCol = oldState ? colIndex(oldState) : -1; // -1 = criado neste estado
             const toCol   = colIndex(newState);
 
-            // Título: preferir do titleMap, senão do próprio update
+            // Ignorar se destino não foi mapeado e origem também não (ruído)
+            if (toCol === 0 && normalizeState(newState) !== 'backlog' &&
+                !['to do','new','open','approved','planejado'].some(k => normalizeState(newState).includes(k))) {
+              // Estado desconhecido — ainda registra mas com toCol correto
+            }
+
             const title = meta.title
               || upd.fields?.['System.Title']?.newValue
               || upd.fields?.['System.Title']?.oldValue
@@ -1223,7 +1248,7 @@ async function importHistoryFromDevOps(forceReimport) {
               ts: changedDate.getTime(),
               id,
               title,
-              fromCol,
+              fromCol: fromCol < 0 ? 0 : fromCol,
               toCol,
               toColName: COLS[toCol] || newState,
               areaShort: meta.areaShort || '',
