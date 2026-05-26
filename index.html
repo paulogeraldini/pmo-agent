@@ -1670,7 +1670,7 @@ async function importHistoryFromDevOps(forceReimport) {
     // Deduplicar: mesmo id + toCol dentro de 60 segundos = duplicata do DevOps
     const seen = new Map();
     const deduped = merged.filter(m => {
-      const minuteKey = `${m.id}-${m.toCol}-${Math.floor(m.ts / 60000)}`;
+      const minuteKey = `${m.id}-${m.toCol}-${Math.floor(m.ts / 300000)}`;
       if (seen.has(minuteKey)) return false;
       seen.set(minuteKey, true);
       return true;
