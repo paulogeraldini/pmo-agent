@@ -1308,10 +1308,14 @@ function loadSprintMoves() {
 
 // ── EXPORTAÇÃO PDF ───────────────────────────────────────
 function openExportModal() {
-  // Preencher com sprint atual como padrão
   setExportPreset('sprint-current');
   document.getElementById('export-modal').classList.add('open');
   updateExportPreview();
+  // Adicionar listeners só uma vez
+  const fromEl = document.getElementById('export-date-from');
+  const toEl   = document.getElementById('export-date-to');
+  if (fromEl && !fromEl._hasListener) { fromEl.addEventListener('change', updateExportPreview); fromEl._hasListener = true; }
+  if (toEl   && !toEl._hasListener)   { toEl.addEventListener('change', updateExportPreview);   toEl._hasListener   = true; }
 }
 
 function closeExportModal(e) {
@@ -1732,7 +1736,11 @@ function renderSprintDashboard() {
   const nextBtn = document.getElementById('sprint-next-btn');
   if (nextBtn) nextBtn.disabled = sprintOffset >= 0;
 
-  // Contar cards ÚNICOS por coluna (não movimentações)
+  // Estado atual de cada card = última movimentação registrada (qualquer sprint)
+  const currentColMap = new Map();
+  [...allMoves].sort((a,b) => a.ts - b.ts).forEach(m => currentColMap.set(m.id, m.toCol));
+
+  // Contar cards ÚNICOS por coluna
   // Para Concluído (col 4): só conta cards cujo último estado registrado é Concluído
   const counts = Array(5).fill(0);
   for (let i = 0; i < 5; i++) {
@@ -1746,10 +1754,6 @@ function renderSprintDashboard() {
   const total = counts.reduce((a, b) => a + b, 0);
 
   // ── COMMITMENT: Planejado (→ Em Andamento) vs Entregue (→ Concluído) ──
-  // Estado atual de cada card = última movimentação registrada (qualquer sprint)
-  const allMoves = loadSprintMoves();
-  const currentColMap = new Map();
-  [...allMoves].sort((a,b) => a.ts - b.ts).forEach(m => currentColMap.set(m.id, m.toCol));
 
   // Planejado = cards únicos que entraram em Em Andamento na sprint
   const plannedIds = [...new Set(moves.filter(m => m.toCol === 1).map(m => m.id))];
@@ -1999,11 +2003,3 @@ renderAliases();
 </div>
 </body>
 </html>
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  const fromEl = document.getElementById('export-date-from');
-  const toEl   = document.getElementById('export-date-to');
-  if (fromEl) fromEl.addEventListener('change', updateExportPreview);
-  if (toEl)   toEl.addEventListener('change', updateExportPreview);
-});
-</script>
