@@ -1280,7 +1280,7 @@ function recordMove(item, fromCol, toCol) {
     const log = raw ? JSON.parse(raw) : [];
     // Evitar duplicata exata (mesmo id + toCol nos últimos 5s)
     const now = Date.now();
-    const dup = log.find(e => e.id === item.id && e.toCol === toCol && (now - e.ts) < 5000);
+    const dup = log.find(e => e.id === item.id && e.toCol === toCol && (now - e.ts) < 60000);
     if (dup) return;
     log.push({
       ts: now,
@@ -1667,10 +1667,17 @@ async function importHistoryFromDevOps(forceReimport) {
     // 3. Mesclar com o log existente (sem duplicar entradas devops já importadas)
     const existing = loadSprintMoves().filter(e => e.source !== 'devops');
     const merged = [...existing, ...imported];
-    // Ordenar por timestamp
-    merged.sort((a, b) => a.ts - b.ts);
+    // Deduplicar: mesmo id + toCol dentro de 60 segundos = duplicata do DevOps
+    const seen = new Map();
+    const deduped = merged.filter(m => {
+      const minuteKey = `${m.id}-${m.toCol}-${Math.floor(m.ts / 60000)}`;
+      if (seen.has(minuteKey)) return false;
+      seen.set(minuteKey, true);
+      return true;
+    });
+    deduped.sort((a, b) => a.ts - b.ts);
     const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
-    const pruned = merged.filter(e => e.ts >= sixMonthsAgo);
+    const pruned = deduped.filter(e => e.ts >= sixMonthsAgo);
     localStorage.setItem(SPRINT_STORAGE_KEY, JSON.stringify(pruned));
     localStorage.setItem(SPRINT_IMPORT_KEY, new Date().toISOString());
 
