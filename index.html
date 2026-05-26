@@ -1942,17 +1942,16 @@ function closeAliasesModal() {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAliasesModal(); });
 
 // ── INIT ─────────────────────────────────────────────────
-// Key storage helper - works in Teams (sessionStorage) and browser (localStorage)
+// Key storage helper - persiste no localStorage igual ao PAT
 function getKey() {
-  try { return localStorage.getItem('anthropic_key') || sessionStorage.getItem('anthropic_key') || ''; } catch(e) { return ''; }
+  try { return localStorage.getItem('anthropic_key') || ''; } catch(e) { return ''; }
 }
 function saveKey(k) {
   try { localStorage.setItem('anthropic_key', k); } catch(e) {}
-  try { sessionStorage.setItem('anthropic_key', k); } catch(e) {}
 }
-// Ask for Anthropic key only if not saved anywhere
+// Ask for Anthropic key only if not saved
 if (!getKey()) {
-  const key = prompt('Cole sua chave da API Anthropic (sk-ant-...):\n\nEssa chave ficará salva para esta sessão.');
+  const key = prompt('Cole sua chave da API Anthropic (sk-ant-...):\n\nEssa chave ficará salva no dispositivo — não será necessário inserir novamente.');
   if (key && key.startsWith('sk-ant-')) saveKey(key);
 }
 loadAliases();
