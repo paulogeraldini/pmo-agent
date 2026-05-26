@@ -386,7 +386,7 @@
 
       <!-- Bar chart -->
       <div class="sprint-section">
-        <div class="sprint-section-title">Movimentações por coluna <span id="sprint-bar-total"></span></div>
+        <div class="sprint-section-title">Cards únicos por coluna <span id="sprint-bar-total"></span></div>
         <div class="bar-chart" id="sprint-bar-chart"></div>
       </div>
 
@@ -1723,9 +1723,11 @@ function renderSprintDashboard() {
   const nextBtn = document.getElementById('sprint-next-btn');
   if (nextBtn) nextBtn.disabled = sprintOffset >= 0;
 
-  // Count moves per destination column
+  // Contar cards ÚNICOS por coluna (não movimentações)
   const counts = Array(5).fill(0);
-  moves.forEach(m => { if (m.toCol >= 0 && m.toCol <= 4) counts[m.toCol]++; });
+  for (let i = 0; i < 5; i++) {
+    counts[i] = new Set(moves.filter(m => m.toCol === i).map(m => m.id)).size;
+  }
   const total = counts.reduce((a, b) => a + b, 0);
 
   // ── COMMITMENT: Planejado (→ Em Andamento) vs Entregue (→ Concluído) ──
@@ -1775,7 +1777,7 @@ function renderSprintDashboard() {
       <div class="kpi-card ${kpiClasses[i]}">
         <div class="kpi-num">${counts[i]}</div>
         <div class="kpi-label">${col}</div>
-        <div class="kpi-sub">${counts[i] === 1 ? 'movimentação' : 'movimentações'}</div>
+        <div class="kpi-sub">${counts[i] === 1 ? 'card único' : 'cards únicos'}</div>
       </div>`).join('');
   }
 
