@@ -1733,16 +1733,12 @@ function renderSprintDashboard() {
   if (nextBtn) nextBtn.disabled = sprintOffset >= 0;
 
   // Contar cards ÚNICOS por coluna (não movimentações)
-  // Para Concluído (col 4): só conta cards que ainda estão lá
+  // Para Concluído (col 4): só conta cards cujo último estado registrado é Concluído
   const counts = Array(5).fill(0);
   for (let i = 0; i < 5; i++) {
     const ids = new Set(moves.filter(m => m.toCol === i).map(m => m.id));
     if (i === 4) {
-      // Filtrar pelo estado atual no board
-      counts[i] = [...ids].filter(id => {
-        const item = items.find(it => it.id === id);
-        return item && item.col === 4;
-      }).length;
+      counts[i] = [...ids].filter(id => currentColMap.get(id) === 4).length;
     } else {
       counts[i] = ids.size;
     }
@@ -1750,17 +1746,19 @@ function renderSprintDashboard() {
   const total = counts.reduce((a, b) => a + b, 0);
 
   // ── COMMITMENT: Planejado (→ Em Andamento) vs Entregue (→ Concluído) ──
+  // Estado atual de cada card = última movimentação registrada (qualquer sprint)
+  const allMoves = loadSprintMoves();
+  const currentColMap = new Map();
+  [...allMoves].sort((a,b) => a.ts - b.ts).forEach(m => currentColMap.set(m.id, m.toCol));
+
   // Planejado = cards únicos que entraram em Em Andamento na sprint
   const plannedIds = [...new Set(moves.filter(m => m.toCol === 1).map(m => m.id))];
-  // Concluído = cards que chegaram em Concluído E ainda estão lá (estado atual = col 4)
+  // Concluído = cards que foram para Concluído na sprint E cujo último estado é Concluído
   const doneIds = [...new Set(
     moves
       .filter(m => m.toCol === 4)
       .map(m => m.id)
-      .filter(id => {
-        const item = items.find(i => i.id === id);
-        return item && item.col === 4;
-      })
+      .filter(id => currentColMap.get(id) === 4)
   )];
   const planned = plannedIds.length;
   const done    = doneIds.length;
