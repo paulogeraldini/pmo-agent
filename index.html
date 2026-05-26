@@ -1665,9 +1665,18 @@ async function importHistoryFromDevOps(forceReimport) {
       if (statusEl) statusEl.innerHTML = `⏳ Processados ${Math.min(i + BATCH, ids.length)} de ${ids.length} itens...`;
     }
 
-    // 3. Mesclar com o log existente (sem duplicar entradas devops já importadas)
-    const existing = loadSprintMoves().filter(e => e.source !== 'devops');
-    const merged = [...existing, ...imported];
+    // 3. Mesclar: manter apenas entradas 'manual' + novos dados do devops deduplicados
+    const manualOnly = loadSprintMoves().filter(e => e.source === 'manual');
+    // Deduplicar manuais também (mesmo id+fromCol+toCol no mesmo dia)
+    const manualSeen = new Set();
+    const manualDeduped = manualOnly.filter(m => {
+      const day = new Date(m.ts).toDateString();
+      const key = `${m.id}-${m.fromCol}-${m.toCol}-${day}`;
+      if (manualSeen.has(key)) return false;
+      manualSeen.add(key);
+      return true;
+    });
+    const merged = [...manualDeduped, ...imported];
     // Deduplicar: priorizar 'manual' sobre 'devops' para o mesmo movimento (id+fromCol+toCol no mesmo dia)
     // Primeiro ordenar: manual antes de devops para o mesmo grupo
     merged.sort((a, b) => {
