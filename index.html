@@ -1668,14 +1668,22 @@ async function importHistoryFromDevOps(forceReimport) {
     // 3. Mesclar com o log existente (sem duplicar entradas devops já importadas)
     const existing = loadSprintMoves().filter(e => e.source !== 'devops');
     const merged = [...existing, ...imported];
-    // Deduplicar: mesmo id + fromCol + toCol = sempre duplicata do DevOps
+    // Deduplicar: priorizar 'manual' sobre 'devops' para o mesmo movimento (id+fromCol+toCol no mesmo dia)
+    // Primeiro ordenar: manual antes de devops para o mesmo grupo
+    merged.sort((a, b) => {
+      if (a.source === 'manual' && b.source === 'devops') return -1;
+      if (a.source === 'devops' && b.source === 'manual') return 1;
+      return a.ts - b.ts;
+    });
     const seen = new Set();
     const deduped = merged.filter(m => {
-      const key = `${m.id}-${m.fromCol}-${m.toCol}`;
+      const day = new Date(m.ts).toDateString();
+      const key = `${m.id}-${m.fromCol}-${m.toCol}-${day}`;
       if (seen.has(key)) return false;
-      seen.set(key, true);
+      seen.add(key);
       return true;
     });
+    deduped.sort((a, b) => a.ts - b.ts);
     deduped.sort((a, b) => a.ts - b.ts);
     const sixMonthsAgo = Date.now() - 180 * 24 * 60 * 60 * 1000;
     const pruned = deduped.filter(e => e.ts >= sixMonthsAgo);
