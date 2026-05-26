@@ -1733,16 +1733,35 @@ function renderSprintDashboard() {
   if (nextBtn) nextBtn.disabled = sprintOffset >= 0;
 
   // Contar cards ÚNICOS por coluna (não movimentações)
+  // Para Concluído (col 4): só conta cards que ainda estão lá
   const counts = Array(5).fill(0);
   for (let i = 0; i < 5; i++) {
-    counts[i] = new Set(moves.filter(m => m.toCol === i).map(m => m.id)).size;
+    const ids = new Set(moves.filter(m => m.toCol === i).map(m => m.id));
+    if (i === 4) {
+      // Filtrar pelo estado atual no board
+      counts[i] = [...ids].filter(id => {
+        const item = items.find(it => it.id === id);
+        return item && item.col === 4;
+      }).length;
+    } else {
+      counts[i] = ids.size;
+    }
   }
   const total = counts.reduce((a, b) => a + b, 0);
 
   // ── COMMITMENT: Planejado (→ Em Andamento) vs Entregue (→ Concluído) ──
   // Planejado = cards únicos que entraram em Em Andamento na sprint
   const plannedIds = [...new Set(moves.filter(m => m.toCol === 1).map(m => m.id))];
-  const doneIds    = [...new Set(moves.filter(m => m.toCol === 4).map(m => m.id))];
+  // Concluído = cards que chegaram em Concluído E ainda estão lá (estado atual = col 4)
+  const doneIds = [...new Set(
+    moves
+      .filter(m => m.toCol === 4)
+      .map(m => m.id)
+      .filter(id => {
+        const item = items.find(i => i.id === id);
+        return item && item.col === 4;
+      })
+  )];
   const planned = plannedIds.length;
   const done    = doneIds.length;
   const rate    = planned > 0 ? Math.round((done / planned) * 100) : null;
