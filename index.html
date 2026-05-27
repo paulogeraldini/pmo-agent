@@ -963,7 +963,7 @@ Retorne APENAS JSON válido sem markdown com os campos:
     const apiKey = getKey();
     if (!apiKey) { const k = prompt('Cole sua chave da API Anthropic (sk-ant-...) para usar a IA:'); if (k && k.startsWith('sk-ant-')) { saveKey(k); } else { preview.innerHTML = '<div class="preview"><span style="color:#f87171;font-size:13px">Chave Anthropic necessária para gerar tasks com IA.</span></div>'; return; } }
     const body = {
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-5',
       max_tokens: 600,
       system: sys,
       messages: [{ role:'user', content: input }]
