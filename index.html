@@ -251,6 +251,8 @@
   .commitment-nums span{display:flex;align-items:center;gap:5px}
   .cn-dot{width:8px;height:8px;border-radius:2px;display:inline-block}
 </style>
+<!-- MSAL (login Entra ID do time). Em produção, fixe uma versão estável no lugar de "latest". -->
+<script src="https://alcdn.msauth.net/browser/latest/js/msal-browser.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -445,6 +447,78 @@
 const ANTHROPIC_API_KEY = ''; // loaded dynamically via getKey() // deixe vazio — a chave é injetada pelo Claude.ai quando rodando lá
 // Para uso local, insira sua chave aqui: 'sk-ant-...'
 
+// ── AUTENTICAÇÃO DO TIME (Entra ID) ──────────────────────
+// Enquanto USE_ENTRA = false, o board funciona EXATAMENTE como antes
+// (PAT do Azure DevOps + chave da IA salvos no dispositivo).
+// Depois de criar o App Registration e publicar a Function, preencha os 3
+// valores abaixo e vire USE_ENTRA para true. Nada mais precisa mudar.
+const USE_ENTRA        = false;
+const ENTRA_CLIENT_ID  = 'SEU_CLIENT_ID';
+const ENTRA_TENANT_ID  = 'SEU_TENANT_ID';
+const CLAUDE_PROXY_URL = 'https://SUA-FUNCTION.azurewebsites.net/api/claude';
+
+const AZURE_DEVOPS_SCOPE = ['499b84ac-1321-427f-aa17-267ca6975798/user_impersonation'];
+let msalInstance = null;
+let msalReady = false;
+function _apiScope() { return ['api://' + ENTRA_CLIENT_ID + '/access_as_user']; }
+
+async function initAuth() {
+  if (!USE_ENTRA) return null;
+  if (typeof msal === 'undefined') { console.error('MSAL não carregou'); return null; }
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: ENTRA_CLIENT_ID,
+      authority: 'https://login.microsoftonline.com/' + ENTRA_TENANT_ID,
+      redirectUri: window.location.origin + window.location.pathname
+    },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msalInstance.initialize();
+  const resp = await msalInstance.handleRedirectPromise();
+  if (resp && resp.account) msalInstance.setActiveAccount(resp.account);
+  const acct = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
+  if (!acct) { await msalInstance.loginRedirect({ scopes: _apiScope() }); return null; }
+  msalInstance.setActiveAccount(acct);
+  msalReady = true;
+  return acct;
+}
+
+async function getToken(scopes) {
+  const res = await msalInstance.acquireTokenSilent({ scopes }).catch((e) => {
+    if (e instanceof msal.InteractionRequiredAuthError) return msalInstance.acquireTokenPopup({ scopes });
+    throw e;
+  });
+  return res.accessToken;
+}
+const getApiToken    = () => getToken(_apiScope());
+const getDevOpsToken = () => getToken(AZURE_DEVOPS_SCOPE);
+
+// Chamada de IA: proxy (token Entra) no modo time; senão, direto na Anthropic
+// com a chave do dispositivo — igual ao comportamento original.
+async function callClaude(body) {
+  if (USE_ENTRA) {
+    const token = await getApiToken();
+    const r = await fetch(CLAUDE_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    return r.json();
+  }
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'x-api-key': getKey(), 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+// Header do Azure DevOps: Bearer (Entra) no modo time, senão Basic (PAT).
+async function authHeader() {
+  if (USE_ENTRA && msalReady) { try { return 'Bearer ' + await getDevOpsToken(); } catch(e) { console.error(e); } }
+  return 'Basic ' + btoa(':' + (cfg.pat || ''));
+}
+
 const COLS = ['Backlog','Em Andamento','Impedido','Impedido QA','Concluído'];
 const COL_CLASSES = ['col-todo','col-doing','col-blocked','col-blocked','col-done'];
 const COL_MAP = {
@@ -506,8 +580,8 @@ function colIndex(s) {
 }
 function priorityBadge(p) { return {'1':'b-purple','2':'b-red','3':'b-amber','4':'b-green'}[String(p||'')] || 'b-gray'; }
 function priorityLabel(p) { return {'1':'crítica','2':'alta','3':'média','4':'baixa'}[String(p||'')] || String(p||''); }
-function hdrs() { return { 'Content-Type':'application/json', 'Authorization':'Basic '+btoa(':'+cfg.pat) }; }
-function phdrs() { return { 'Content-Type':'application/json-patch+json', 'Authorization':'Basic '+btoa(':'+cfg.pat) }; }
+async function hdrs()  { return { 'Content-Type':'application/json', 'Authorization': await authHeader() }; }
+async function phdrs() { return { 'Content-Type':'application/json-patch+json', 'Authorization': await authHeader() }; }
 
 function tagBadgeClass(tag) {
   const t = tag.toLowerCase();
@@ -540,13 +614,13 @@ async function connect() {
   const org = document.getElementById('org').value.trim();
   const proj = document.getElementById('proj').value.trim();
   const pat = document.getElementById('pat').value.trim();
-  if (!org || !proj || !pat) { setConnStatus('Preencha todos os campos.', 'err'); return; }
+  if (!org || !proj || (!USE_ENTRA && !pat)) { setConnStatus('Preencha todos os campos.', 'err'); return; }
   cfg = { org, proj, pat };
   setConnStatus('Conectando<span class="dot">...</span>', 'loading');
   try {
     const r = await fetch(
       `https://dev.azure.com/${org}/${encodeURIComponent(proj)}/_apis/wit/wiql?api-version=7.0`,
-      { method:'POST', headers:hdrs(), body:JSON.stringify({ query:"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.ChangedDate] DESC" }) }
+      { method:'POST', headers: await hdrs(), body:JSON.stringify({ query:"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.ChangedDate] DESC" }) }
     );
     if (!r.ok) {
       const errText = await r.text();
@@ -581,7 +655,7 @@ async function loadAreaPaths() {
   try {
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/classificationnodes/areas?$depth=5&api-version=7.0`,
-      { headers: hdrs() }
+      { headers: await hdrs() }
     );
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
@@ -620,7 +694,7 @@ async function loadIterations() {
   try {
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/classificationnodes/iterations?$depth=5&api-version=7.0`,
-      { headers: hdrs() }
+      { headers: await hdrs() }
     );
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
@@ -650,7 +724,7 @@ async function loadPBIs(search = '') {
     const query = `SELECT [System.Id],[System.Title] FROM WorkItems WHERE [System.WorkItemType]='Product Backlog Item' ${searchClause} ORDER BY [System.ChangedDate] DESC`;
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
-      { method:'POST', headers:hdrs(), body:JSON.stringify({ query }) }
+      { method:'POST', headers: await hdrs(), body:JSON.stringify({ query }) }
     );
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
@@ -658,7 +732,7 @@ async function loadPBIs(search = '') {
     if (!ids.length) { pbis = []; return; }
     const r2 = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems?ids=${ids.join(',')}&fields=System.Id,System.Title,System.State&api-version=7.0`,
-      { headers: hdrs() }
+      { headers: await hdrs() }
     );
     const d2 = await r2.json();
     pbis = (d2.value || []).map(w => ({
@@ -680,7 +754,7 @@ async function loadBoard() {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
-      { method:'POST', headers:hdrs(), body:JSON.stringify({
+      { method:'POST', headers: await hdrs(), body:JSON.stringify({
         query:`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@project AND [System.WorkItemType] IN ('Task','Product Backlog Item') AND [System.AreaPath] UNDER '${cfg.proj}' AND (
           [System.State] NOT IN ('Done','Concluído','Closed','Resolved','Completed','Removed')
           OR [System.ChangedDate] >= '${cutoff}'
@@ -697,7 +771,7 @@ async function loadBoard() {
     if (!ids.length) { items = []; renderBoard(); return; }
     const r2 = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems?ids=${ids.join(',')}&fields=${fields}&api-version=7.0`,
-      { headers: hdrs() }
+      { headers: await hdrs() }
     );
     if (!r2.ok) throw new Error('HTTP ' + r2.status);
     const d2 = await r2.json();
@@ -748,7 +822,7 @@ async function dropCard(colIdx) {
   try {
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${draggedId}?api-version=7.0`,
-      { method:'PATCH', headers:phdrs(), body:JSON.stringify([{op:'add',path:'/fields/System.State',value:newState}]) }
+      { method:'PATCH', headers: await phdrs(), body:JSON.stringify([{op:'add',path:'/fields/System.State',value:newState}]) }
     );
     if (!r.ok) { const err = await r.json(); throw new Error(err.message||r.status); }
     recordMove(item, prevCol, colIdx);
@@ -924,7 +998,7 @@ async function moveItem(id, colIdx) {
   try {
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${id}?api-version=7.0`,
-      { method:'PATCH', headers:phdrs(), body:JSON.stringify([{op:'add',path:'/fields/System.State',value:newState}]) }
+      { method:'PATCH', headers: await phdrs(), body:JSON.stringify([{op:'add',path:'/fields/System.State',value:newState}]) }
     );
     if (!r.ok) { const e = await r.json(); throw new Error(e.message||r.status); }
     recordMove(item, prevCol, colIdx);
@@ -961,20 +1035,19 @@ Retorne APENAS JSON válido sem markdown com os campos:
 - pbiId: number ou null (ID do PBI mencionado no texto ex: "PBI 42" ou "vincular ao 42", ou null)
 - tags: array de strings (tipo de demanda: bug/melhoria/novo-recurso/análise/suporte se identificado, e outras tags relevantes; pode ser array vazio)${aliasHint}${areaHint}`;
 
-    const apiKey = getKey();
-    if (!apiKey) { const k = prompt('Cole sua chave da API Anthropic (sk-ant-...) para usar a IA:'); if (k && k.startsWith('sk-ant-')) { saveKey(k); } else { preview.innerHTML = '<div class="preview"><span style="color:#f87171;font-size:13px">Chave Anthropic necessária para gerar tasks com IA.</span></div>'; return; } }
+    // No modo time (USE_ENTRA), a chave da IA fica no servidor — sem prompt.
+    if (!USE_ENTRA) {
+      const apiKey = getKey();
+      if (!apiKey) { const k = prompt('Cole sua chave da API Anthropic (sk-ant-...) para usar a IA:'); if (k && k.startsWith('sk-ant-')) { saveKey(k); } else { preview.innerHTML = '<div class="preview"><span style="color:#f87171;font-size:13px">Chave Anthropic necessária para gerar tasks com IA.</span></div>'; return; } }
+    }
     const body = {
       model: 'claude-sonnet-4-5',
       max_tokens: 600,
       system: sys,
       messages: [{ role:'user', content: input }]
     };
-    const headers = { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
 
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', headers, body: JSON.stringify(body)
-    });
-    const d = await r.json();
+    const d = await callClaude(body);
     if (d.error) throw new Error(d.error.message);
     const text = d.content.map(i => i.text || '').join('');
     pending = JSON.parse(text.replace(/```json|```/g, '').trim());
@@ -1161,7 +1234,7 @@ async function createItem() {
     const workItemType = typeEl ? typeEl.value : (pending.workItemType || 'Task');
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${encodeURIComponent('$' + workItemType)}?api-version=7.0`,
-      { method:'POST', headers: phdrs(), body: JSON.stringify(body) }
+      { method:'POST', headers: await phdrs(), body: JSON.stringify(body) }
     );
     if (!r.ok) { const err = await r.json(); throw new Error(err.message || r.status); }
     const created = await r.json();
@@ -1173,7 +1246,7 @@ async function createItem() {
       try {
         await fetch(
           `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${created.id}?api-version=7.0`,
-          { method:'PATCH', headers:phdrs(), body:JSON.stringify([{
+          { method:'PATCH', headers: await phdrs(), body:JSON.stringify([{
             op:'add', path:'/relations/-',
             value:{ rel:'System.LinkTypes.Hierarchy-Reverse',
               url:`https://dev.azure.com/${cfg.org}/_apis/wit/workitems/${pbiId}`,
@@ -1589,7 +1662,7 @@ async function importHistoryFromDevOps(forceReimport) {
     const wiqlQuery = `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@project AND [System.WorkItemType] IN ('Task','Product Backlog Item') AND [System.AreaPath] UNDER '${cfg.proj}' AND [System.ChangedDate] >= '2026-05-01' ORDER BY [System.ChangedDate] DESC`;
     const r = await fetch(
       `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/wiql?api-version=7.0`,
-      { method:'POST', headers:hdrs(), body:JSON.stringify({ query: wiqlQuery }) }
+      { method:'POST', headers: await hdrs(), body:JSON.stringify({ query: wiqlQuery }) }
     );
     if (!r.ok) throw new Error('WIQL HTTP ' + r.status);
     const wiqlData = await r.json();
@@ -1609,7 +1682,7 @@ async function importHistoryFromDevOps(forceReimport) {
         try {
           const ru = await fetch(
             `https://dev.azure.com/${cfg.org}/${encodeURIComponent(cfg.proj)}/_apis/wit/workitems/${id}/updates?api-version=7.0`,
-            { headers: hdrs() }
+            { headers: await hdrs() }
           );
           if (!ru.ok) return;
           const ud = await ru.json();
@@ -1950,8 +2023,8 @@ function getKey() {
 function saveKey(k) {
   try { localStorage.setItem('anthropic_key', k); } catch(e) {}
 }
-// Ask for Anthropic key only if not saved
-if (!getKey()) {
+// Chave da IA só é pedida no modo local/PAT. No modo time (Entra) fica no servidor.
+if (!USE_ENTRA && !getKey()) {
   const key = prompt('Cole sua chave da API Anthropic (sk-ant-...):\n\nEssa chave ficará salva no dispositivo — não será necessário inserir novamente.');
   if (key && key.startsWith('sk-ant-')) saveKey(key);
 }
@@ -1985,6 +2058,8 @@ try {
 } catch(e) {}
 loadPAT();
 renderAliases();
+// No modo time, dispara o login do Entra ID (redireciona ao portal se ainda não logado).
+if (USE_ENTRA) { initAuth().catch(e => console.error('Falha no login Entra:', e)); }
 </script>
 <div id="aliases-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;align-items:center;justify-content:center">
   <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:24px;width:520px;max-width:92vw;max-height:80vh;overflow-y:auto">
