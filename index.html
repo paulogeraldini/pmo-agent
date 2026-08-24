@@ -252,7 +252,7 @@
   .cn-dot{width:8px;height:8px;border-radius:2px;display:inline-block}
 </style>
 <!-- MSAL (login Entra ID do time). Em produção, fixe uma versão estável no lugar de "latest". -->
-<script src="https://alcdn.msauth.net/browser/latest/js/msal-browser.min.js"></script>
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -473,7 +473,7 @@ async function initAuth() {
     },
     cache: { cacheLocation: 'localStorage' }
   });
-  await msalInstance.initialize();
+  if (typeof msalInstance.initialize === 'function') { await msalInstance.initialize(); }
   const resp = await msalInstance.handleRedirectPromise();
   if (resp && resp.account) msalInstance.setActiveAccount(resp.account);
   const acct = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0];
