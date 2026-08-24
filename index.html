@@ -452,10 +452,10 @@ const ANTHROPIC_API_KEY = ''; // loaded dynamically via getKey() // deixe vazio 
 // (PAT do Azure DevOps + chave da IA salvos no dispositivo).
 // Depois de criar o App Registration e publicar a Function, preencha os 3
 // valores abaixo e vire USE_ENTRA para true. Nada mais precisa mudar.
-const USE_ENTRA        = false;
-const ENTRA_CLIENT_ID  = 'SEU_CLIENT_ID';
-const ENTRA_TENANT_ID  = 'SEU_TENANT_ID';
-const CLAUDE_PROXY_URL = 'https://SUA-FUNCTION.azurewebsites.net/api/claude';
+const USE_ENTRA        = true;
+const ENTRA_CLIENT_ID  = '2f87f40e-81dd-48b9-8a2b-a3a6e30d8779';
+const ENTRA_TENANT_ID  = 'ea055b04-db0c-43bc-bd91-cc2af6d4384b';
+const CLAUDE_PROXY_URL = 'https://pmo-claude-proxy-hzesbgfrhaepdugf.brazilsouth-01.azurewebsites.net/api/claude';
 
 const AZURE_DEVOPS_SCOPE = ['499b84ac-1321-427f-aa17-267ca6975798/user_impersonation'];
 let msalInstance = null;
